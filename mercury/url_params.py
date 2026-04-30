@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime
 from decimal import Decimal, InvalidOperation, ROUND_FLOOR
 from typing import Dict, Iterable, List, Optional
 
@@ -396,3 +397,83 @@ def resolve_boolean_value(
             url_value,
         )
     return value
+
+
+def resolve_temporal_value(
+    value: str = "",
+    url_key: str = "",
+    validator=None,
+    warn: bool = True,
+) -> str:
+    """
+    Resolve initial date/time-like value using runtime URL params.
+
+    ``validator`` should accept a string and return True when the value is
+    valid for the target widget. Missing, empty, or invalid URL params fall
+    back to ``value``.
+    """
+    if not url_key:
+        return value
+
+    url_value = get_url_param_value(url_key)
+    if url_value is None:
+        return value
+
+    resolved = str(url_value).strip()
+    if not resolved:
+        if warn:
+            log.warning(
+                "URL param %r is empty. Falling back to widget value.",
+                url_key,
+            )
+        return value
+
+    if validator is not None and not validator(resolved):
+        if warn:
+            log.warning(
+                "URL param %r=%r is not a valid temporal value. Falling back to widget value.",
+                url_key,
+                resolved,
+            )
+        return value
+
+    return resolved
+
+
+def is_valid_date(value: str) -> bool:
+    if not value:
+        return True
+    try:
+        datetime.strptime(value, "%Y-%m-%d")
+        return True
+    except ValueError:
+        return False
+
+
+def is_valid_time(value: str) -> bool:
+    if not value:
+        return True
+    for fmt in ("%H:%M", "%H:%M:%S"):
+        try:
+            datetime.strptime(value, fmt)
+            return True
+        except ValueError:
+            pass
+    return False
+
+
+def is_valid_datetime_local(value: str) -> bool:
+    if not value:
+        return True
+    for fmt in (
+        "%Y-%m-%dT%H:%M",
+        "%Y-%m-%dT%H:%M:%S",
+        "%Y-%m-%d %H:%M",
+        "%Y-%m-%d %H:%M:%S",
+    ):
+        try:
+            datetime.strptime(value, fmt)
+            return True
+        except ValueError:
+            pass
+    return False

@@ -1,0 +1,82 @@
+---
+title: DateTimeInput
+description: How to use the DateTimeInput widget in the interactive Mercury App
+---
+
+The **DateTimeInput** widget displays a native browser date-and-time picker.
+Its value is available as `YYYY-MM-DD HH:MM` or `YYYY-MM-DD HH:MM:SS`.
+
+## Usage
+
+```python
+import mercury as mr
+
+dt = mr.DateTimeInput(
+    label="Select date and time",
+    value="2026-04-30 14:30"
+)
+
+dt.value
+```
+
+## DateTimeInput Props
+
+### label
+
+**type:** `string`
+
+Text displayed above the input. The default is `"Date and time"`.
+
+### value
+
+**type:** `string`
+
+Initial datetime value in `YYYY-MM-DD HH:MM` or `YYYY-MM-DD HH:MM:SS` format.
+
+### min
+
+**type:** `string`
+
+Minimum allowed datetime.
+
+### max
+
+**type:** `string`
+
+Maximum allowed datetime.
+
+### step
+
+**type:** `int`
+
+Input step in seconds. The default is `60`.
+
+### url_key
+
+**type:** `string`
+
+URL query parameter name used to override the initial value.
+
+### position
+
+**type:** `"sidebar" | "inline" | "bottom"`
+
+Controls where the widget is rendered. The default is `"sidebar"`.
+
+### disabled
+
+**type:** `bool`
+
+If `True`, the input is visible but cannot be edited.
+
+### hidden
+
+**type:** `bool`
+
+If `True`, the widget exists in app state but is not rendered.
+
+### key
+
+**type:** `string`
+
+Unique identifier used to distinguish widgets with identical arguments.

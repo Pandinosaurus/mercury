@@ -1,0 +1,83 @@
+---
+title: TimeInput
+description: How to use the TimeInput widget in the interactive Mercury App
+---
+
+The **TimeInput** widget displays a native browser time picker.
+Its value is available as `HH:MM` or `HH:MM:SS`.
+
+## Usage
+
+```python
+import mercury as mr
+
+time = mr.TimeInput(
+    label="Select time",
+    value="14:30",
+    step=60
+)
+
+time.value
+```
+
+## TimeInput Props
+
+### label
+
+**type:** `string`
+
+Text displayed above the input. The default is `"Time"`.
+
+### value
+
+**type:** `string`
+
+Initial time value in `HH:MM` or `HH:MM:SS` format.
+
+### min
+
+**type:** `string`
+
+Minimum allowed time.
+
+### max
+
+**type:** `string`
+
+Maximum allowed time.
+
+### step
+
+**type:** `int`
+
+Input step in seconds. The default is `60`.
+
+### url_key
+
+**type:** `string`
+
+URL query parameter name used to override the initial value.
+
+### position
+
+**type:** `"sidebar" | "inline" | "bottom"`
+
+Controls where the widget is rendered. The default is `"sidebar"`.
+
+### disabled
+
+**type:** `bool`
+
+If `True`, the input is visible but cannot be edited.
+
+### hidden
+
+**type:** `bool`
+
+If `True`, the widget exists in app state but is not rendered.
+
+### key
+
+**type:** `string`
+
+Unique identifier used to distinguish widgets with identical arguments.

@@ -1,0 +1,76 @@
+---
+title: DateInput
+description: How to use the DateInput widget in the interactive Mercury App
+---
+
+The **DateInput** widget displays a native browser date picker.
+Its value is available as an ISO date string: `YYYY-MM-DD`.
+
+## Usage
+
+```python
+import mercury as mr
+
+date = mr.DateInput(
+    label="Select date",
+    value="2026-04-30"
+)
+
+date.value
+```
+
+## DateInput Props
+
+### label
+
+**type:** `string`
+
+Text displayed above the input. The default is `"Date"`.
+
+### value
+
+**type:** `string`
+
+Initial date value in `YYYY-MM-DD` format.
+
+### min
+
+**type:** `string`
+
+Minimum allowed date in `YYYY-MM-DD` format.
+
+### max
+
+**type:** `string`
+
+Maximum allowed date in `YYYY-MM-DD` format.
+
+### url_key
+
+**type:** `string`
+
+URL query parameter name used to override the initial value.
+
+### position
+
+**type:** `"sidebar" | "inline" | "bottom"`
+
+Controls where the widget is rendered. The default is `"sidebar"`.
+
+### disabled
+
+**type:** `bool`
+
+If `True`, the input is visible but cannot be edited.
+
+### hidden
+
+**type:** `bool`
+
+If `True`, the widget exists in app state but is not rendered.
+
+### key
+
+**type:** `string`
+
+Unique identifier used to distinguish widgets with identical arguments.

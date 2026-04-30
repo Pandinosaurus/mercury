@@ -1,0 +1,82 @@
+---
+title: DateRange
+description: How to use the DateRange widget in the interactive Mercury App
+---
+
+The **DateRange** widget displays two native browser date inputs: start and end.
+Its value is available as a list of ISO date strings: `["YYYY-MM-DD", "YYYY-MM-DD"]`.
+
+## Usage
+
+```python
+import mercury as mr
+
+date_range = mr.DateRange(
+    label="Select date range",
+    value=("2026-04-01", "2026-04-30")
+)
+
+date_range.value
+```
+
+## DateRange Props
+
+### label
+
+**type:** `string`
+
+Text displayed above the inputs. The default is `"Date range"`.
+
+### value
+
+**type:** `tuple[str, str] | list[str] | None`
+
+Initial start and end dates in `YYYY-MM-DD` format.
+
+### min
+
+**type:** `string`
+
+Minimum allowed date for both inputs.
+
+### max
+
+**type:** `string`
+
+Maximum allowed date for both inputs.
+
+### start_url_key
+
+**type:** `string`
+
+URL query parameter name used to override the start date.
+
+### end_url_key
+
+**type:** `string`
+
+URL query parameter name used to override the end date.
+
+### position
+
+**type:** `"sidebar" | "inline" | "bottom"`
+
+Controls where the widget is rendered. The default is `"sidebar"`.
+
+### disabled
+
+**type:** `bool`
+
+If `True`, both inputs are visible but cannot be edited.
+
+### hidden
+
+**type:** `bool`
+
+If `True`, the widget exists in app state but is not rendered.
+
+### key
+
+**type:** `string`
+
+Unique identifier used to distinguish widgets with identical arguments.
