@@ -135,6 +135,10 @@ export default { render };
     .mljar-chat-scroll-helper {
         display: none;
     }
+
+    .mljar-chat-container {
+        background-color: #fff;
+    }
     """
 
     tick = traitlets.Int(0).tag(sync=True)
@@ -175,6 +179,9 @@ class Chat:
     scroll_container_selector : str, optional
         CSS selector used to locate the preferred scrollable container
         (defaults to the Mercury main panel).
+    height : str, optional
+        CSS height for the chat message container. If empty, Chat keeps its
+        natural height and the surrounding app/page container scrolls.
 
     Notes
     -----
@@ -187,6 +194,7 @@ class Chat:
         self,
         placeholder: str = "💬 No messages yet. Start the conversation!",
         scroll_container_selector: str = "#mercury-main-panel, .mercury-main-panel",
+        height: str = "",
     ):
         """
         Chat widget that holds Message widgets and auto-scrolls using anywidget.
@@ -201,6 +209,7 @@ class Chat:
         """
         self.messages = []
         self.scroll_container_selector = scroll_container_selector
+        self.height = str(height or "").strip()
 
         # Placeholder label (same as before)
         self.placeholder_label = widgets.HTML(
@@ -220,11 +229,12 @@ class Chat:
             [self.placeholder_label],
             layout=widgets.Layout(
                 width="100%",
+                height=self.height or None,
                 padding="4px",
-                background_color="#fff",
-                overflow_y="visible",  # no internal scrollbar; page/app scrolls
+                overflow="auto" if self.height else "visible",
             ),
         )
+        self.vbox.add_class("mljar-chat-container")
 
         # Hidden helper widget that runs JS (via anywidget) for scrolling
         self._scroller = ScrollHelper(

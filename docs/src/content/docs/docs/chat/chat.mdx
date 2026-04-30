@@ -72,9 +72,30 @@ This makes `Chat` suitable for:
 * streaming outputs
 
 <Aside>
-`Chat` itself does not create a scrollbar.
+By default, `Chat` does not create its own scrollbar.
 Scrolling happens in the surrounding Mercury application container.
+Set `height` when you want the chat itself to scroll.
 </Aside>
+
+## Fixed Height
+
+Use `height` to create a fixed-height chat area with internal vertical scrolling.
+This is useful in column layouts where one side of the app contains a chat.
+
+```python
+import mercury as mr
+
+left, right = mr.Columns([0.4, 0.6])
+
+with left:
+    chat = mr.Chat(height="600px")
+
+with right:
+    mr.Markdown("Controls or analysis output")
+```
+
+The value accepts CSS height strings, for example `"600px"`, `"70vh"`, or
+`"calc(100vh - 120px)"`.
 
 ## Displaying Rich Outputs in Chat
 
@@ -174,6 +195,28 @@ inside a custom layout.
 
 ---
 
+### height
+
+**type:** `string`
+
+CSS height for the chat message container.
+
+Default: `""`
+
+If empty, Chat keeps its natural content height and the surrounding app/page
+container scrolls. If provided, Chat uses that fixed height and enables internal
+vertical scrolling.
+
+Examples:
+
+```python
+mr.Chat(height="600px")
+mr.Chat(height="70vh")
+mr.Chat(height="calc(100vh - 120px)")
+```
+
+---
+
 ## Chat Methods
 
 ### add()
@@ -215,4 +258,3 @@ It is a **lightweight container**, not a full chat application framework.
 * All rendering logic lives in the `Message` widget
 * Auto-scrolling is resilient to large outputs (plots, images)
 * Internally, scrolling is implemented using a small frontend helper widget
-
