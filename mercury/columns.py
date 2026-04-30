@@ -60,6 +60,12 @@ class ColumnOutput(LayoutContextOutput):
         self.clear_output(wait=wait)
 
 
+def _clear_output_widget(out) -> None:
+    out.clear_output(wait=True)
+    if hasattr(out, "outputs"):
+        out.outputs = ()
+
+
 def Columns(
     n: int = 2,
     min_width: str = "100px",
@@ -127,7 +133,7 @@ def Columns(
         box.position = position
         if not append:
             for out in outs:
-                out.clear_output(wait=True)
+                _clear_output_widget(out)
         _display_style()
         display(box)
         return outs

@@ -121,6 +121,12 @@ class TabOutput(LayoutContextOutput):
     def clear(self, wait: bool = True):
         self.clear_output(wait=wait)
 
+
+def _clear_output_widget(out) -> None:
+    out.clear_output(wait=True)
+    if hasattr(out, "outputs"):
+        out.outputs = ()
+
 # ---------- Public API ----------
 def Tabs(labels=("Tab 1", "Tab 2"), active=0, key="", append=False):
     """
@@ -178,7 +184,7 @@ def Tabs(labels=("Tab 1", "Tab 2"), active=0, key="", append=False):
         box, outs, _header, _panels = cached
         if not append:
             for out in outs:
-                out.clear_output(wait=True)
+                _clear_output_widget(out)
         display(box)
         return outs
 

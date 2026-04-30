@@ -97,6 +97,12 @@ def _set_class(widget, class_name: str, enabled: bool) -> None:
         widget.remove_class(class_name)
 
 
+def _clear_output_widget(out) -> None:
+    out.clear_output(wait=True)
+    if hasattr(out, "outputs"):
+        out.outputs = ()
+
+
 def Expander(
     label="Details",
     expanded=False,
@@ -141,7 +147,7 @@ def Expander(
         _header.label = label
         _header.header_background = bool(header_background)
         if not append:
-            out.clear_output(wait=True)
+            _clear_output_widget(out)
         display(_box)
         return out
 

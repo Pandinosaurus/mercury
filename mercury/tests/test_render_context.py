@@ -116,6 +116,36 @@ def test_columns_append_true_preserves_cached_outputs(monkeypatch):
     assert calls == []
 
 
+def test_columns_default_clear_resets_output_buffers(monkeypatch):
+    _disable_display(monkeypatch)
+    WidgetsManager.widgets.clear()
+
+    outs = Columns(2)
+    outs[0].append_stdout("first\n")
+    outs[1].append_stdout("second\n")
+
+    reused = Columns(2)
+
+    assert reused is outs
+    assert reused[0].outputs == ()
+    assert reused[1].outputs == ()
+
+
+def test_columns_append_true_preserves_output_buffers(monkeypatch):
+    _disable_display(monkeypatch)
+    WidgetsManager.widgets.clear()
+
+    outs = Columns(2)
+    outs[0].append_stdout("first\n")
+    outs[1].append_stdout("second\n")
+
+    reused = Columns(2, append=True)
+
+    assert reused is outs
+    assert len(reused[0].outputs) == 1
+    assert len(reused[1].outputs) == 1
+
+
 def test_tabs_clears_cached_outputs_by_default(monkeypatch):
     _disable_display(monkeypatch)
 
@@ -154,6 +184,36 @@ def test_tabs_append_true_preserves_cached_outputs(monkeypatch):
     assert calls == []
 
 
+def test_tabs_default_clear_resets_output_buffers(monkeypatch):
+    _disable_display(monkeypatch)
+    WidgetsManager.widgets.clear()
+
+    outs = Tabs(labels=["a", "b"])
+    outs[0].append_stdout("first\n")
+    outs[1].append_stdout("second\n")
+
+    reused = Tabs(labels=["a", "b"])
+
+    assert reused is outs
+    assert reused[0].outputs == ()
+    assert reused[1].outputs == ()
+
+
+def test_tabs_append_true_preserves_output_buffers(monkeypatch):
+    _disable_display(monkeypatch)
+    WidgetsManager.widgets.clear()
+
+    outs = Tabs(labels=["a", "b"])
+    outs[0].append_stdout("first\n")
+    outs[1].append_stdout("second\n")
+
+    reused = Tabs(labels=["a", "b"], append=True)
+
+    assert reused is outs
+    assert len(reused[0].outputs) == 1
+    assert len(reused[1].outputs) == 1
+
+
 def test_expander_clears_cached_output_by_default(monkeypatch):
     _disable_display(monkeypatch)
 
@@ -178,6 +238,34 @@ def test_expander_append_true_preserves_cached_output(monkeypatch):
 
     assert reused is out
     assert calls == []
+
+
+def test_expander_default_clear_resets_output_buffer(monkeypatch):
+    _disable_display(monkeypatch)
+    WidgetsManager.widgets.clear()
+
+    out = Expander("Details")
+    out.append_stdout("first\n")
+    assert len(out.outputs) == 1
+
+    reused = Expander("Details")
+
+    assert reused is out
+    assert reused.outputs == ()
+
+
+def test_expander_append_true_preserves_output_buffer(monkeypatch):
+    _disable_display(monkeypatch)
+    WidgetsManager.widgets.clear()
+
+    out = Expander("Details")
+    out.append_stdout("first\n")
+    assert len(out.outputs) == 1
+
+    reused = Expander("Details", append=True)
+
+    assert reused is out
+    assert len(reused.outputs) == 1
 
 
 def test_expander_default_style_preserves_border_and_header_background(monkeypatch):
