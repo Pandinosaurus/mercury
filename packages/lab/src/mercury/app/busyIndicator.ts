@@ -30,9 +30,6 @@ export class BusyIndicator {
 
     this.root = document.createElement('div');
     this.root.className = 'mbi-root';
-    this.root.style.position = 'absolute';
-    this.root.style.top = '8px';
-    this.root.style.right = '8px';
 
     this.root.setAttribute('role', 'status');
     this.root.setAttribute('aria-live', 'polite');
@@ -157,6 +154,9 @@ export class BusyIndicator {
   --mbi-text: var(--jp-ui-font-color1, #24292f);
 }
 .mbi-root {
+  position: fixed;
+  top: 12px;
+  right: 16px;
   z-index: 1500;
   align-items: center;
   gap: 6px;
@@ -167,6 +167,12 @@ export class BusyIndicator {
   box-shadow: 0 2px 6px rgba(0,0,0,0.04);
   color: var(--mbi-text);
   display: inline-flex;
+}
+@media (max-width: 640px) {
+  .mbi-root {
+    top: 8px;
+    right: 8px;
+  }
 }
 .mbi-dot {
   width: 12px;
