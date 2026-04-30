@@ -267,10 +267,21 @@ class MultiSelectWidget(anywidget.AnyWidget):
           removeBtn.addEventListener("mousedown", event => {
             event.preventDefault();
             event.stopPropagation();
+          });
+
+          removeBtn.addEventListener("click", event => {
+            event.preventDefault();
+            event.stopPropagation();
+            if (isDisabled()) {
+              return;
+            }
             const nextSelected = getSelected().filter(value => value !== choice);
+            isEditing = false;
             model.set("value", nextSelected);
             model.save_changes();
-            input.focus();
+            input.value = "";
+            setOpen(false);
+            syncEditingState();
           });
 
           chip.appendChild(label);
