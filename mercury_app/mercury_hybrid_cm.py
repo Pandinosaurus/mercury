@@ -21,7 +21,9 @@ def _now():
 
 def _norm(path: str) -> str:
     """Jupyter contents paths are POSIX-style and relative to root (no leading slash)."""
-    return path.lstrip("/")
+    path = str(path or "").replace("\\", "/").lstrip("/")
+    normalized = posixpath.normpath(path).lstrip("/")
+    return "" if normalized == "." else normalized
 
 
 class _MemStore:
@@ -110,10 +112,11 @@ class HybridContentsManager(ContentsManager):
             self._default_kernel = (
                 getattr(getattr(self.parent, "kernel_manager", None), "default_kernel_name", None)
                 or getattr(self.parent, "default_kernel_name", None)
-                or self._ksm.default_kernel_name
+                or getattr(self._ksm, "default_kernel_name", None)
+                or "python3"
             )
         except Exception:
-            self._default_kernel = self._ksm.default_kernel_name
+            self._default_kernel = "python3"
 
         self.log.info(
             "[MercuryHybridCM] active; underlying=%s",
@@ -128,13 +131,94 @@ class HybridContentsManager(ContentsManager):
 
     @staticmethod
     def _is_shadow_root(path: str) -> bool:
-        return path in HybridContentsManager.SHADOW_ROOTS
+        path = _norm(path)
+        return posixpath.basename(path.rstrip("/")) in HybridContentsManager.SHADOW_ROOTS
 
     @staticmethod
     def _is_shadow(path: str) -> bool:
-        if path in HybridContentsManager.SHADOW_ROOTS:
-            return True
-        return any(path.startswith(root + "/") for root in HybridContentsManager.SHADOW_ROOTS)
+        path = _norm(path)
+        return any(part in HybridContentsManager.SHADOW_ROOTS for part in path.split("/"))
+
+    @staticmethod
+    def _source_path_for_shadow(path: str) -> str | None:
+        path = _norm(path)
+        parts = path.split("/")
+
+        shadow_index = next(
+            (
+                i
+                for i, part in enumerate(parts)
+                if part in HybridContentsManager.SHADOW_ROOTS
+            ),
+            None,
+        )
+        if shadow_index is None or shadow_index != len(parts) - 2:
+            return None
+
+        shadow_name = parts[-1]
+        marker = "__mercury__"
+        if marker not in shadow_name or not shadow_name.endswith(".ipynb"):
+            return None
+
+        source_stem, session_id = shadow_name.rsplit(marker, 1)
+        session_suffix = session_id[: -len(".ipynb")]
+        if not source_stem or not session_suffix:
+            return None
+
+        return posixpath.join(*parts[:shadow_index], f"{source_stem}.ipynb")
+
+    async def _recover_shadow(self, path: str) -> Dict[str, Any] | None:
+        source_path = self._source_path_for_shadow(path)
+        if source_path is None:
+            return None
+
+        try:
+            exists = await ensure_async(self.real_cm.file_exists(source_path))
+        except Exception as exc:
+            self.log.warning(
+                "[MercuryHybridCM] shadow recovery file_exists failed for %s from %s: %s",
+                source_path,
+                path,
+                exc,
+            )
+            return None
+
+        if not exists:
+            self.log.warning(
+                "[MercuryHybridCM] shadow recovery source missing: shadow=%s source=%s",
+                path,
+                source_path,
+            )
+            return None
+
+        try:
+            source = await ensure_async(self.real_cm.get(source_path, content=True))
+        except Exception as exc:
+            self.log.warning(
+                "[MercuryHybridCM] shadow recovery source read failed: shadow=%s source=%s error=%s",
+                path,
+                source_path,
+                exc,
+            )
+            return None
+
+        if source.get("type") != "notebook" or not isinstance(source.get("content"), dict):
+            self.log.warning(
+                "[MercuryHybridCM] shadow recovery rejected non-notebook source: shadow=%s source=%s type=%s",
+                path,
+                source_path,
+                source.get("type"),
+            )
+            return None
+
+        nb = sanitize_notebook_for_mercury_runtime(source["content"])
+        recovered = self._mem.save_nb(path, nb)
+        self.log.info(
+            "[MercuryHybridCM] recovered missing shadow notebook: shadow=%s source=%s",
+            path,
+            source_path,
+        )
+        return recovered
 
     def _kernel_exists(self, name: str) -> bool:
         if not name:
@@ -206,7 +290,12 @@ class HybridContentsManager(ContentsManager):
 
             if not self._mem.exists(path):
                 self.log.debug("[MercuryHybridCM] GET (shadow) MISS: %s", path)
-                raise HTTPError(404, f"Shadow notebook not found: {path}")
+                recovered = await self._recover_shadow(path)
+                if recovered is None:
+                    raise HTTPError(
+                        404,
+                        f"Shadow notebook not found and could not be recovered: {path}",
+                    )
 
             self.log.debug(
                 "[MercuryHybridCM] GET (shadow) HIT: %s content=%s",
@@ -346,6 +435,13 @@ class HybridContentsManager(ContentsManager):
 
         if self._is_shadow(path):
             exists = self._mem.exists(path)
+            if not exists:
+                source_path = self._source_path_for_shadow(path)
+                if source_path is not None:
+                    try:
+                        exists = await ensure_async(self.real_cm.file_exists(source_path))
+                    except Exception:
+                        exists = False
             self.log.debug(
                 "[MercuryHybridCM] FILE exists (shadow): %s = %s",
                 path,

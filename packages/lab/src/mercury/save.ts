@@ -1,3 +1,4 @@
+import { PageConfig } from '@jupyterlab/coreutils';
 import { DocumentRegistry } from '@jupyterlab/docregistry';
 import type { INotebookContent } from '@jupyterlab/nbformat';
 import { INotebookModel } from '@jupyterlab/notebook';
@@ -41,6 +42,10 @@ export function installMercurySaveSanitizer(
   const originalSave = context.save.bind(context);
 
   context.save = (async () => {
+    if (PageConfig.getOption('mercuryStandalone') === 'true') {
+      return;
+    }
+
     const originalToJSON = model.toJSON.bind(model);
 
     model.toJSON = (() => {
