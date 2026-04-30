@@ -13,6 +13,44 @@ from .theme import THEME
 Position = Literal["sidebar", "inline", "bottom"]
 
 
+_FILE_SIZE_UNITS = {
+    "KB": 1024,
+    "MB": 1024 * 1024,
+    "GB": 1024 * 1024 * 1024,
+}
+
+
+def _normalize_max_file_size(value: str) -> str:
+    if not isinstance(value, str):
+        raise ValueError("UploadFile: `max_file_size` must be a string like '10MB'.")
+
+    text = value.strip()
+    if not text:
+        raise ValueError("UploadFile: `max_file_size` must not be empty.")
+
+    digits = ""
+    unit = ""
+    for char in text:
+        if char.isdigit() and not unit:
+            digits += char
+        else:
+            unit += char
+
+    if not digits or not unit:
+        raise ValueError(
+            "UploadFile: `max_file_size` must include a positive number and unit."
+        )
+
+    size = int(digits)
+    unit = unit.strip().upper()
+    if size <= 0 or unit not in _FILE_SIZE_UNITS:
+        raise ValueError(
+            "UploadFile: `max_file_size` must use a positive size with KB, MB, or GB."
+        )
+
+    return f"{size}{unit}"
+
+
 class UploadedFile:
     def __init__(self, name, value):
         self.name = name
@@ -95,12 +133,16 @@ def UploadFile(
     ...     print(f.name, len(f.value))
     """
 
-    args = [label, max_file_size, multiple, position]
+    max_file_size = _normalize_max_file_size(max_file_size)
+
+    args = [label, max_file_size, multiple, position, disabled, hidden]
     kwargs = {
         "label": label,
         "max_file_size": max_file_size,
         "multiple": multiple,
-        "position": position
+        "position": position,
+        "disabled": disabled,
+        "hidden": hidden,
     }
 
     code_uid = WidgetsManager.get_code_uid("UploadFile", key=key, args=args, kwargs=kwargs)
@@ -163,7 +205,7 @@ class UploadFileWidget(anywidget.AnyWidget):
 
       function parseMaxSize(str) {
         if (!str || typeof str !== "string") return null;
-        const s = str.trim();
+        const s = str.trim().toUpperCase();
         const num = parseInt(s, 10);
         if (!Number.isFinite(num) || num <= 0) return null;
 
@@ -176,27 +218,35 @@ class UploadFileWidget(anywidget.AnyWidget):
       function handleFiles(files) {
         const maxStr = model.get("max_file_size") || "100MB";
         const maxBytes = parseMaxSize(maxStr);
+        const multiple = !!model.get("multiple");
+        const selectedFiles = Array.from(files || []);
+        const acceptedFiles = multiple ? selectedFiles : selectedFiles.slice(0, 1);
+        let pending = 0;
+        const nextVals = multiple ? [...(model.get("values") || [])] : [];
+        const nextNames = multiple ? [...(model.get("filenames") || [])] : [];
 
-        Array.from(files || []).forEach(file => {
+        acceptedFiles.forEach(file => {
           if (maxBytes !== null && file.size > maxBytes) {
             alert(`File ${file.name} is too large! Limit ${maxStr} per file.`);
             return;
           }
+          pending += 1;
 
           const reader = new FileReader();
           reader.onload = (evt) => {
-            const newVals = [...(model.get("values") || [])];
-            const newNames = [...(model.get("filenames") || [])];
+            nextVals.push(Array.from(new Uint8Array(evt.target.result)));
+            nextNames.push(file.name);
+            pending -= 1;
 
-            newVals.push(Array.from(new Uint8Array(evt.target.result)));
-            newNames.push(file.name);
-
-            model.set("values", newVals);
-            model.set("filenames", newNames);
-            model.save_changes();
+            if (pending === 0) {
+              model.set("values", nextVals);
+              model.set("filenames", nextNames);
+              model.save_changes();
+            }
           };
           reader.readAsArrayBuffer(file);
         });
+        input.value = "";
       }
 
       input.addEventListener("change", () => handleFiles(input.files));

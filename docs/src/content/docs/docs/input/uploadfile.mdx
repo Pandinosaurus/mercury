@@ -24,7 +24,7 @@ You can try the `UploadFile` widget directly in this interactive example:
 ## Usage
 
 To create an UploadFile widget, provide a `label`.
-The uploaded content is available via `.value`, `.name`, or `.files`.
+The uploaded content is available via `.value`, `.name`, `.files`, `.names`, or `.values_bytes`.
 
 ### Basic Example
 
@@ -48,11 +48,15 @@ uploader.value
 * `name` → file name
 * `value` → file content as `bytes`
 
+With the default `multiple=False`, uploading another file replaces the previous one.
+
 ---
 
 ### Multiple Files
 
 Enable uploading multiple files using `multiple=True`.
+When `multiple=False`, the widget stores one file and a new upload replaces the previous file.
+When `multiple=True`, new uploads are appended to the current file list until the user removes them.
 
 **Code**
 
@@ -74,6 +78,8 @@ You can also access all files directly:
 
 ```python
 uploader.files
+uploader.names
+uploader.values_bytes
 ```
 
 ---
@@ -81,8 +87,9 @@ uploader.files
 ### File Size Limit
 
 Use `max_file_size` to limit the size of each uploaded file.
+The limit is checked in the browser before the file content is synced to Python.
 
-Supported units:
+The value must be a positive integer followed by a supported unit:
 
 * `KB`
 * `MB`
@@ -98,6 +105,12 @@ uploader = mr.UploadFile(
 ```
 
 If a file exceeds the limit, the user is notified and the file is not uploaded.
+Units are case-insensitive, so values like `"10mb"` are normalized to `"10MB"`.
+
+<Aside>
+`max_file_size` is enforced by the browser widget before file bytes are synced to Python.
+It is a per-file limit, not a combined total limit for all uploaded files.
+</Aside>
 
 ---
 
@@ -139,6 +152,7 @@ The default is `"Upload file"`.
 **type:** `string`
 
 Maximum allowed size per file.
+The value must be a positive integer followed by `KB`, `MB`, or `GB`.
 
 Examples:
 
@@ -147,6 +161,7 @@ Examples:
 * `"1GB"`
 
 The default is `"100MB"`.
+The unit can be written as `KB`, `MB`, or `GB` and is case-insensitive.
 
 ---
 
@@ -156,6 +171,9 @@ The default is `"100MB"`.
 
 If `True`, allows uploading multiple files.
 The default is `False`.
+
+With `multiple=False`, selecting or dropping a new file replaces the previous file.
+With `multiple=True`, selecting or dropping files appends them to the current list.
 
 ---
 
@@ -207,10 +225,10 @@ The `key` value is required when widgets are created inside loops.
 ## Notes
 
 * Uploaded files are stored **in memory**, not saved to disk automatically.
+* `max_file_size` is a **per-file** browser-side limit.
 * Each uploaded file is represented as an `UploadedFile` object with:
 
   * `.name` — file name
   * `.value` — file content as `bytes`
 * For `multiple=False`, `.value` and `.name` refer to the **first file**.
-* Use `.files` or iteration to handle multiple uploads.
-
+* For `multiple=True`, use `.files`, `.names`, `.values_bytes`, or iteration to handle all uploads.
