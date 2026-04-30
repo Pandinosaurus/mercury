@@ -36,6 +36,7 @@
     "scripts": {
         "build": "jlpm run clean && jlpm workspaces foreach -Atp run build && jlpm run check:artifacts",
         "build:prod": "jlpm run clean:all && jlpm workspaces foreach -At run build:prod && jlpm run check:artifacts",
+        "build:release": "scripts/build-release.sh",
         "clean": "jlpm workspaces foreach -At run clean",
         "clean:all": "jlpm workspaces foreach -At run clean && jlpm workspace @mljar/mercury-extension run clean:labextension && jlpm workspace @mljar/mercury-extension run clean:lintcache && jlpm workspace mercury-app run clean:static",
         "check:artifacts": "node -e \"const fs=require('fs'); const paths=['packages/application/lib/index.js','packages/lab/lib/index.js','mercury_app/static']; const missing=paths.filter(p=>!fs.existsSync(p)); if(missing.length){console.error('Missing artifacts:',missing.join(', ')); process.exit(1);} console.log('Artifacts OK');\"",

@@ -38,7 +38,24 @@ packages = ["mercury", "mercury_app"]
 
 [tool.hatch.build.targets.sdist]
 artifacts = ["mercury_app/labextension", "mercury_app/schemas", "mercury_app/static"]
-exclude = [".github", "binder", "venv"]
+exclude = [
+    ".github",
+    ".ipynb_checkpoints",
+    ".ollama.env",
+    ".pytest_cache",
+    ".stylelintcache",
+    ".vscode",
+    "binder",
+    "dist",
+    "node_modules",
+    "venv",
+    "*.ipynb",
+    "*.env",
+    "**/*.ipynb",
+    "**/*.env",
+    "**/*.map",
+    "**/build_log.json",
+]
 
 [tool.hatch.build.targets.wheel.shared-data]
 "mercury_app/labextension" = "share/jupyter/labextensions/@mljar/mercury-extension"
