@@ -30,6 +30,7 @@ import { ISignal, Signal } from '@lumino/signaling';
 import * as Y from 'yjs';
 import { ServerHealthMonitor } from './healthmonitor';
 import { getWidgetManager, resolveIpyModel } from './ipyWidgetsHelpers';
+import { saveMercuryNotebook } from '../save';
 
 /*************************************************
  * Constants & Types
@@ -146,7 +147,7 @@ export class AppModel {
         }, false);
       }
 
-      void this._context.save().then(() => {
+      void saveMercuryNotebook(this._context).then(() => {
         this._ready.emit(null);
       });
 

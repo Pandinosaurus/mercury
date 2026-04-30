@@ -19,6 +19,7 @@ from jupyterlab_server.handlers import _camelCase, is_url
 from tornado import web
 
 from ._version import __version__
+from .notebook_sanitize import sanitize_notebook_for_mercury_runtime
 
 version = __version__
 
@@ -145,7 +146,7 @@ class MercuryHandler(ExtensionHandlerJinjaMixin, ExtensionHandlerMixin, JupyterH
         model = {
             'type': 'notebook',
             'format': 'json',
-            'content': src['content'],
+            'content': sanitize_notebook_for_mercury_runtime(src['content']),
         }
         await ensure_async(cm.save(model, shadow_path))
         return shadow_path  # posix path

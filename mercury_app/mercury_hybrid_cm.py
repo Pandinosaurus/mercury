@@ -12,6 +12,8 @@ from jupyter_server.services.contents.manager import ContentsManager
 from jupyter_server.utils import ensure_async
 from tornado.web import HTTPError
 
+from .notebook_sanitize import sanitize_notebook_for_mercury_runtime
+
 
 def _now():
     return datetime.now(timezone.utc)
@@ -262,7 +264,7 @@ class HybridContentsManager(ContentsManager):
                 )
                 raise HTTPError(400, "Only notebook JSON is supported in the shadow area")
 
-            nb = model.get("content") or {}
+            nb = sanitize_notebook_for_mercury_runtime(model.get("content") or {})
             saved = self._mem.save_nb(path, nb)
             self.log.debug("[MercuryHybridCM] SAVE (shadow): %s", path)
 

@@ -2,12 +2,13 @@
 
 import { IWidgetTracker } from '@jupyterlab/apputils';
 import { DocumentWidget, DocumentRegistry } from '@jupyterlab/docregistry';
-import { INotebookModel } from '@jupyterlab/notebook'; 
+import { INotebookModel } from '@jupyterlab/notebook';
 import { Token } from '@lumino/coreutils';
 import { Widget } from '@lumino/widgets';
 import type { IObservableJSON } from '@jupyterlab/observables';
 
 import { MercuryPanel } from './panel';
+import { installMercurySaveSanitizer, saveMercuryNotebook } from './save';
 
 /* ────────────────────────────────────────────────────────────────────────────
  * Environment detector: show toolbar only in JupyterLab
@@ -84,7 +85,10 @@ function patchMercuryMeta(
 /* ────────────────────────────────────────────────────────────────────────────
  * Document widget with Notebook-style toolbar
  * ──────────────────────────────────────────────────────────────────────────── */
-export class MercuryWidget extends DocumentWidget<MercuryPanel, INotebookModel> {
+export class MercuryWidget extends DocumentWidget<
+  MercuryPanel,
+  INotebookModel
+> {
   constructor(
     context: DocumentRegistry.IContext<INotebookModel>,
     content: MercuryPanel
@@ -93,13 +97,14 @@ export class MercuryWidget extends DocumentWidget<MercuryPanel, INotebookModel> 
     this.title.label = context.localPath;
     this.title.closable = true;
     this.addClass('jp-NotebookPanel');
+    installMercurySaveSanitizer(context);
 
     if (inJupyterLab()) {
       this.toolbar.addClass('jp-NotebookPanel-toolbar');
       this.toolbar.addClass('mercury-Toolbar');
 
       const scheduleSave = debounce(() => {
-        void context.save();
+        void saveMercuryNotebook(context);
       }, 1000);
 
       /* ────────────────────────────────────────────────────────────────────
@@ -121,7 +126,10 @@ export class MercuryWidget extends DocumentWidget<MercuryPanel, INotebookModel> 
         scheduleSave();
       });
 
-      titleInput.addEventListener('change', () => void context.save());
+      titleInput.addEventListener(
+        'change',
+        () => void saveMercuryNotebook(context)
+      );
       this.toolbar.addItem('app-title', new Widget({ node: titleInput }));
 
       /* ────────────────────────────────────────────────────────────────────
@@ -143,7 +151,10 @@ export class MercuryWidget extends DocumentWidget<MercuryPanel, INotebookModel> 
         scheduleSave();
       });
 
-      descInput.addEventListener('change', () => void context.save());
+      descInput.addEventListener(
+        'change',
+        () => void saveMercuryNotebook(context)
+      );
       this.toolbar.addItem('app-desc', new Widget({ node: descInput }));
 
       /* ────────────────────────────────────────────────────────────────────
@@ -168,7 +179,10 @@ export class MercuryWidget extends DocumentWidget<MercuryPanel, INotebookModel> 
         scheduleSave();
       });
 
-      thumbTextInput.addEventListener('change', () => void context.save());
+      thumbTextInput.addEventListener(
+        'change',
+        () => void saveMercuryNotebook(context)
+      );
       this.toolbar.addItem('thumb-text', new Widget({ node: thumbTextInput }));
 
       /* ────────────────────────────────────────────────────────────────────
@@ -190,16 +204,23 @@ export class MercuryWidget extends DocumentWidget<MercuryPanel, INotebookModel> 
       void context.ready.then(() => {
         const meta = readMercuryMeta(context);
         // domyślna czerń jeśli brak
-        thumbTextColorInput.value = String(meta.thumbnail_text_color ?? '#000000');
+        thumbTextColorInput.value = String(
+          meta.thumbnail_text_color ?? '#000000'
+        );
       });
 
       thumbTextColorInput.addEventListener('change', () => {
         if (!context.model) return;
-        patchMercuryMeta(context, { thumbnail_text_color: thumbTextColorInput.value });
-        void context.save();
+        patchMercuryMeta(context, {
+          thumbnail_text_color: thumbTextColorInput.value
+        });
+        void saveMercuryNotebook(context);
       });
 
-      this.toolbar.addItem('thumb-text-color', new Widget({ node: thumbTextColorWrap }));
+      this.toolbar.addItem(
+        'thumb-text-color',
+        new Widget({ node: thumbTextColorWrap })
+      );
 
       /* ────────────────────────────────────────────────────────────────────
        * Thumbnail background color → metadata.mercury.thumbnail_bg
@@ -225,7 +246,7 @@ export class MercuryWidget extends DocumentWidget<MercuryPanel, INotebookModel> 
       thumbBgInput.addEventListener('change', () => {
         if (!context.model) return;
         patchMercuryMeta(context, { thumbnail_bg: thumbBgInput.value });
-        void context.save();
+        void saveMercuryNotebook(context);
       });
 
       this.toolbar.addItem('thumb-bg', new Widget({ node: thumbBgWrap }));
@@ -254,7 +275,7 @@ export class MercuryWidget extends DocumentWidget<MercuryPanel, INotebookModel> 
       showCodeInput.addEventListener('change', () => {
         if (!context.model) return;
         patchMercuryMeta(context, { showCode: !!showCodeInput.checked });
-        void context.save();
+        void saveMercuryNotebook(context);
       });
 
       this.toolbar.addItem('show-code', new Widget({ node: showCodeWrap }));
@@ -284,7 +305,7 @@ export class MercuryWidget extends DocumentWidget<MercuryPanel, INotebookModel> 
       fullWidthInput.addEventListener('change', () => {
         if (!context.model) return;
         patchMercuryMeta(context, { fullWidth: !!fullWidthInput.checked });
-        void context.save();
+        void saveMercuryNotebook(context);
       });
 
       const fullWidthWidget = new Widget({ node: fullWidthWrap });
@@ -325,7 +346,7 @@ export class MercuryWidget extends DocumentWidget<MercuryPanel, INotebookModel> 
         const value = !!autoRerunInput.checked;
         if (!context.model) return;
         patchMercuryMeta(context, { autoRerun: value });
-        void context.save();
+        void saveMercuryNotebook(context);
       });
 
       const autoRerunWidget = new Widget({ node: autoRerunWrap });
