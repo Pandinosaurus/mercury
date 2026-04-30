@@ -2,10 +2,13 @@
 interface Props {
   iframeSrc: string;
   notebookUrl?: string;
+  openUrl?: string;
+  showOpenLink?: boolean;
   height?: number;
 }
 
-const { iframeSrc, notebookUrl, height = 500 } = Astro.props;
+const { iframeSrc, notebookUrl, openUrl, showOpenLink = true, height = 500 } = Astro.props;
+const openDemoUrl = openUrl ?? iframeSrc;
 const cloudUrl = "https://platform.mljar.com";
 ---
 
@@ -28,6 +31,11 @@ const cloudUrl = "https://platform.mljar.com";
     {notebookUrl && (
       <a href={notebookUrl} target="_blank" rel="noreferrer" class="mercury-demo__link">
         🛠️ Source code
+      </a>
+    )}
+    {showOpenLink && (
+      <a href={openDemoUrl} target="_blank" rel="noopener noreferrer" class="mercury-demo__link">
+        Open demo in new tab
       </a>
     )}
     <a href={cloudUrl} target="_blank" rel="noreferrer" class="mercury-demo__link mercury-demo__cloud-link">
@@ -115,6 +123,7 @@ const cloudUrl = "https://platform.mljar.com";
   .mercury-demo__footer {
     display: flex;
     align-items: center;
+    flex-wrap: wrap;
     background: #f2f2f2;
     padding: 6px 10px;
     font-size: 0.85rem;
