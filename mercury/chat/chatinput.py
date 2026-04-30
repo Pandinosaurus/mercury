@@ -133,6 +133,37 @@ class ChatInputWidget(anywidget.AnyWidget):
       el.appendChild(container);
 
       let lastModelValue = model.get("value") ?? "";
+      let isGenerating = !!window.__mercuryExecutionRunning;
+
+      const renderButtonState = () => {
+        if (isGenerating) {
+          btn.textContent = "Stop";
+          btn.classList.add("mljar-chatinput-button-stop");
+          btn.setAttribute("aria-label", "Stop response generation");
+          btn.title = "Stop response generation";
+        } else {
+          btn.textContent = model.get("button_icon") || " ➤ ";
+          btn.classList.remove("mljar-chatinput-button-stop");
+          btn.setAttribute("aria-label", "Send message");
+          btn.title = "";
+        }
+      };
+
+      const setGenerating = (next) => {
+        isGenerating = !!next;
+        renderButtonState();
+      };
+
+      const requestStop = () => {
+        window.dispatchEvent(new CustomEvent("mercury:interrupt-requested"));
+      };
+
+      const onExecutionStarted = () => setGenerating(true);
+      const onExecutionFinished = () => setGenerating(false);
+
+      window.addEventListener("mercury:execution-started", onExecutionStarted);
+      window.addEventListener("mercury:execution-finished", onExecutionFinished);
+      renderButtonState();
 
       model.on("change:value", () => {
         const newVal = model.get("value") ?? "";
@@ -146,8 +177,12 @@ class ChatInputWidget(anywidget.AnyWidget):
 
         lastModelValue = newVal;
       });
-      
+
       const sendMessage = () => {
+        if (isGenerating) {
+          requestStop();
+          return;
+        }
         const msg = (input.value || "").trim();
         if (!msg) return;
 
@@ -162,7 +197,10 @@ class ChatInputWidget(anywidget.AnyWidget):
 
       btn.addEventListener("click", sendMessage);
 
+      model.on("change:button_icon", renderButtonState);
+
       input.addEventListener("keydown", (ev) => {
+        if (isGenerating) return;
         const sendOnEnter = !!model.get("send_on_enter");
         if (!sendOnEnter) return;
         if (ev.key === "Enter" && !ev.shiftKey) {
@@ -170,6 +208,11 @@ class ChatInputWidget(anywidget.AnyWidget):
           sendMessage();
         }
       });
+
+      return () => {
+        window.removeEventListener("mercury:execution-started", onExecutionStarted);
+        window.removeEventListener("mercury:execution-finished", onExecutionFinished);
+      };
     }
     export default { render };
     """
@@ -225,6 +268,10 @@ class ChatInputWidget(anywidget.AnyWidget):
 
     .mljar-chatinput-button:hover {{
         filter: brightness(0.95);
+    }}
+
+    .mljar-chatinput-button-stop {{
+        background: #dc2626;
     }}
     """
 

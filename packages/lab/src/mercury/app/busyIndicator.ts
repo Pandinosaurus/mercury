@@ -21,6 +21,15 @@ export class BusyIndicator {
   private showDelayMs: number;
   private hideDelayMs: number;
 
+  private setGlobalExecutionState(running: boolean) {
+    (window as any).__mercuryExecutionRunning = running;
+    window.dispatchEvent(
+      new CustomEvent(
+        running ? 'mercury:execution-started' : 'mercury:execution-finished'
+      )
+    );
+  }
+
   constructor(opts: BusyIndicatorOptions) {
     if (!opts?.container) throw new Error('BusyIndicator: container required');
     BusyIndicator.ensureStyles();
@@ -55,7 +64,12 @@ export class BusyIndicator {
 
   /** One unit of work started */
   begin() {
+    const wasIdle = this.busyCount === 0;
     this.busyCount++;
+
+    if (wasIdle) {
+      this.setGlobalExecutionState(true);
+    }
 
     // If we were about to hide, cancel that (work resumed).
     if (this.hideTimer !== null) {
@@ -83,11 +97,17 @@ export class BusyIndicator {
 
   /** One unit of work finished */
   finish() {
+    const wasBusy = this.busyCount > 0;
+
     // Decrement but never go below 0 (defensive).
     this.busyCount = Math.max(0, this.busyCount - 1);
 
     // Still busy? Then do nothing.
     if (this.busyCount > 0) return;
+
+    if (wasBusy) {
+      this.setGlobalExecutionState(false);
+    }
 
     // No longer busy => cancel pending show (if it hasn't shown yet).
     if (this.showTimer !== null) {
@@ -125,6 +145,7 @@ export class BusyIndicator {
     this.hideTimer = null;
     this.visible = false;
     this.root.style.display = 'none';
+    this.setGlobalExecutionState(false);
   }
 
   dispose() {

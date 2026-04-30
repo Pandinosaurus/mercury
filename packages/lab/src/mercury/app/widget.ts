@@ -252,6 +252,13 @@ export class AppWidget extends Panel {
   private _busy?: BusyIndicator;
   private _fullWidth = false;
   private _toastContainer?: HTMLDivElement;
+  private _interruptExecution = () => {
+    try {
+      void this._model.context.sessionContext.session?.kernel?.interrupt();
+    } catch {
+      /* empty */
+    }
+  };
 
   constructor(model: AppModel) {
     super();
@@ -347,13 +354,11 @@ export class AppWidget extends Panel {
       // }
     });
     // Wire the button to interrupt the kernel
-    this._busy.element.addEventListener('mbi:interrupt', () => {
-      try {
-        void this._model.context.sessionContext.session?.kernel?.interrupt();
-      } catch {
-        /* empty */
-      }
-    });
+    this._busy.element.addEventListener('mbi:interrupt', this._interruptExecution);
+    window.addEventListener(
+      'mercury:interrupt-requested',
+      this._interruptExecution
+    );
   }
 
   private createToastContainer(): void {
@@ -500,6 +505,10 @@ export class AppWidget extends Panel {
 
     Signal.clearData(this);
     try { this._busy?.dispose(); } catch { }
+    window.removeEventListener(
+      'mercury:interrupt-requested',
+      this._interruptExecution
+    );
     super.dispose();
   }
 

@@ -42,6 +42,10 @@ A typical Mercury App flow looks like this:
 4. After the notebook finishes executing, Mercury resets `prompt.value` back to `""`
    so the next run starts clean.
 
+While the app is generating a response, the send button automatically changes to
+`Stop`. Clicking it interrupts the running kernel execution and preserves the text
+currently typed in the input.
+
 <Aside>
 This reset behavior makes it easy to treat `prompt.value` as a “one-shot” input:
 it is available during the run, and cleared afterwards.
@@ -162,4 +166,3 @@ The `key` value is needed if widgets are created in a loop.
 * `ChatInput` is designed for short, single-line messages.
 * The widget clears the visible input field immediately after submission.
 * `value` is best treated as “consume once during the current run”.
-
