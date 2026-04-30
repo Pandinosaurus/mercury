@@ -71,11 +71,18 @@ t.selected_rows`} lang="python"/>
 
 ### Customize your Table 
 
-You can also customize the Table’s appearance by changing the page size (number of rows per page) or adjusting its width.
+You can also customize the Table’s appearance by changing the page size (number of rows per page), width, or height.
 
 **Code**
 
-<Code code={`t = Table(df, search=True, select_rows=True, page_size=20, width="700px")`} lang="python"/>
+<Code code={`t = Table(
+    df,
+    search=True,
+    select_rows=True,
+    page_size=20,
+    width="700px",
+    height="360px",
+)`} lang="python"/>
 
 **Preview**
 
@@ -84,6 +91,20 @@ You can also customize the Table’s appearance by changing the page size (numbe
   alt="Customized Table" 
   class="docs-image"
 />
+
+### Create without immediate display
+
+By default, `Table()` displays the widget immediately. Set `display_now=False`
+when you want to create the widget first and display it later.
+
+**Code**
+
+<Code code={`from IPython.display import display
+
+t = Table(df, display_now=False)
+
+# display later
+display(t)`} lang="python"/>
 
 ## Table Props
 
@@ -115,4 +136,46 @@ Enables the search bar and allows filtering table. It's off by default (`False`)
 
 **type:** `string`
 
-Sets the width of the table component. Accepts values like `100%`, `800px`, or other valid CSS size units. Default is `100%`.
+Sets the width of the table component. Accepts CSS size values like `100%`, `800px`, `50vw`, or `48rem`.
+Default is `100%`.
+
+### height
+
+**type:** `string | None`
+
+Sets the height of the scrollable table body. Accepts CSS size values like `360px`, `50vh`, or `24rem`.
+When `None`, Mercury keeps the current automatic table height behavior. Default is `None`.
+
+### show_index_col
+
+**type:** `boolean`
+
+Controls whether the original DataFrame index is displayed as a table column.
+Default is `False`.
+
+### position
+
+**type:** `"sidebar" | "inline" | "bottom"`
+
+Controls where the table is rendered in the Mercury layout.
+Default is `"inline"`.
+
+### display_now
+
+**type:** `boolean`
+
+Controls whether the table is displayed immediately after construction.
+Set to `False` when you want to return the widget and display it later yourself. Default is `True`.
+
+### key
+
+**type:** `string`
+
+Optional identifier used to distinguish tables with the same data and options.
+Use it when you intentionally want separate table widget instances for the same dataset.
+
+## Notes
+
+* Table widgets are cached based on the input data content and constructor options.
+* `display_now` is not part of the cache key. It only controls whether the widget is displayed immediately.
+* Use `key` to force separate table instances for the same data.

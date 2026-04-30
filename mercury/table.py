@@ -11,6 +11,21 @@ from .manager import WidgetsManager, MERCURY_MIMETYPE
 from .render_context import apply_widget_render_metadata, with_widget_render_metadata
 
 
+_CSS_SIZE_UNITS = ("px", "%", "vh", "vw", "rem", "em")
+
+
+def _validate_css_size(value, name: str, *, allow_none: bool = False):
+    if value is None and allow_none:
+        return None
+    if not isinstance(value, str) or not value.endswith(_CSS_SIZE_UNITS):
+        allowed = "', '".join(_CSS_SIZE_UNITS)
+        raise ValueError(
+            f"Table: `{name}` must be a string ending with '{allowed}', "
+            f"e.g. '400px', '80%', or '50vh'"
+        )
+    return value
+
+
 def _json_safe_table_value(value: Any) -> Any:
     if value is None:
         return None
@@ -98,8 +113,10 @@ def Table(
     search: bool = False,
     select_rows: bool = False,
     width: str = "100%",
+    height: str | None = None,
     position: str = "inline",
     show_index_col: bool = False,
+    display_now: bool = True,
     key: str = "",
 ):
     # validation
@@ -108,10 +125,8 @@ def Table(
     except Exception:
         raise Exception("Table: `page_size` must be integer")
 
-    if not isinstance(width, str) or not width.endswith(("px", "%")):
-        raise ValueError(
-            "Table: `width` must be a string ending with 'px' or '%', e.g. '400px' or '80%'"
-        )
+    width = _validate_css_size(width, "width")
+    height = _validate_css_size(height, "height", allow_none=True)
 
     widget_kwargs = {
         "data": data,
@@ -119,6 +134,7 @@ def Table(
         "search": search,
         "select_rows": select_rows,
         "width": width,
+        "height": height,
         "show_index_col": show_index_col,
         "position": position,
     }
@@ -128,6 +144,7 @@ def Table(
         "search": search,
         "select_rows": select_rows,
         "width": width,
+        "height": height,
         "show_index_col": show_index_col,
         "position": position,
     }
@@ -135,12 +152,14 @@ def Table(
     cached = WidgetsManager.get_widget(code_uid)
     if cached:
         apply_widget_render_metadata(cached)
-        display(cached)
+        if display_now:
+            display(cached)
         return cached
 
     instance = TableWidget(**with_widget_render_metadata(widget_kwargs))
     WidgetsManager.add_widget(code_uid, instance)
-    display(instance)
+    if display_now:
+        display(instance)
     return instance
 
 
@@ -428,10 +447,15 @@ function render({ model, el }) {
     const wrap = c('div', { className: 'mljar-mercury-table-widget-table-wrapper' });
     const table = c('table', { className: 'mljar-mercury-table-widget-tbl' });
     const w = model.get('width');
+    const h = model.get('height');
     if (w) {
       wrap.style.width = w;
       controls.style.width = w;
-      }
+    }
+    if (h) {
+      wrap.style.height = h;
+      wrap.style.maxHeight = h;
+    }
 
         
     if (cols.length > 0) {
@@ -509,7 +533,9 @@ function render({ model, el }) {
       wrap.appendChild(overlay);
     }
 
-    if (fixedTableHeight === null) {
+    if (h) {
+      fixedTableHeight = null;
+    } else if (fixedTableHeight === null) {
       requestAnimationFrame(() => {
         const h = wrap.getBoundingClientRect().height;
         if (h > 0) {
@@ -659,6 +685,7 @@ function render({ model, el }) {
   model.on('change:table_page', rerender);
   model.on('change:_filtered_length', rerender);
   model.on('change:search_version', rerender);
+  model.on('change:height', rerender);
   rerender();
 
   // read cell id (used to sync widget with notebook cell)
@@ -877,6 +904,7 @@ export default { render };
     search = traitlets.Bool(False).tag(sync=True)
     select_rows = traitlets.Bool(False).tag(sync=True)
     width = traitlets.Unicode("100%").tag(sync=True)
+    height = traitlets.Unicode(default_value=None, allow_none=True).tag(sync=True)
     show_index_col = traitlets.Bool(False).tag(sync=True)
     position = traitlets.Enum(
         values=["sidebar", "inline", "bottom"],

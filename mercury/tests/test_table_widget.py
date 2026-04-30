@@ -61,6 +61,7 @@ def test_table_defaults(sample_pandas_df):
     assert w.select_rows is False
     assert w.show_index_col is False
     assert w.width == "100%"
+    assert w.height is None
 
 
 def test_table_with_all_arguments(sample_pandas_df):
@@ -68,6 +69,7 @@ def test_table_with_all_arguments(sample_pandas_df):
         sample_pandas_df,
         page_size=25,
         width="80%",
+        height="360px",
         search=True,
         select_rows=True,
         show_index_col=True,
@@ -76,6 +78,7 @@ def test_table_with_all_arguments(sample_pandas_df):
 
     assert w.page_size == 25
     assert w.width == "80%"
+    assert w.height == "360px"
     assert w.search is True
     assert w.select_rows is True
     assert w.show_index_col is True
@@ -111,6 +114,59 @@ def test_table_key_disambiguates_same_data(monkeypatch):
     assert len(WidgetsManager.widgets) == 2
 
 
+def test_table_height_is_part_of_cache_key(monkeypatch):
+    monkeypatch.setattr(m, "display", lambda *_: None)
+
+    first = Table([{"name": "Alice", "score": 10}])
+    second = Table([{"name": "Alice", "score": 10}], height="300px")
+
+    assert second is not first
+    assert len(WidgetsManager.widgets) == 2
+
+
+def test_table_displays_by_default(monkeypatch):
+    displayed = []
+    monkeypatch.setattr(m, "display", lambda widget: displayed.append(widget))
+
+    widget = Table([{"name": "Alice", "score": 10}])
+
+    assert displayed == [widget]
+
+
+def test_table_display_now_false_does_not_display(monkeypatch):
+    displayed = []
+    monkeypatch.setattr(m, "display", lambda widget: displayed.append(widget))
+
+    widget = Table([{"name": "Alice", "score": 10}], display_now=False)
+
+    assert isinstance(widget, TableWidget)
+    assert displayed == []
+
+
+def test_table_display_now_is_not_part_of_cache_key(monkeypatch):
+    displayed = []
+    monkeypatch.setattr(m, "display", lambda widget: displayed.append(widget))
+
+    first = Table([{"name": "Alice", "score": 10}], display_now=False)
+    second = Table([{"name": "Alice", "score": 10}], display_now=True)
+
+    assert second is first
+    assert displayed == [first]
+    assert len(WidgetsManager.widgets) == 1
+
+
+def test_cached_table_respects_display_now_false(monkeypatch):
+    displayed = []
+    monkeypatch.setattr(m, "display", lambda widget: displayed.append(widget))
+
+    first = Table([{"name": "Alice", "score": 10}])
+    second = Table([{"name": "Alice", "score": 10}], display_now=False)
+
+    assert second is first
+    assert displayed == [first]
+    assert len(WidgetsManager.widgets) == 1
+
+
 def test_table_hashes_dataframe_content(monkeypatch):
     monkeypatch.setattr(m, "display", lambda *_: None)
 
@@ -140,6 +196,16 @@ def test_table_invalid_width_string_raises(sample_pandas_df):
 def test_table_invalid_width_number_raises(sample_pandas_df):
     with pytest.raises(ValueError, match="width"):
         Table(sample_pandas_df, width=400)
+
+
+def test_table_invalid_height_string_raises(sample_pandas_df):
+    with pytest.raises(ValueError, match="height"):
+        Table(sample_pandas_df, height="tall")
+
+
+def test_table_invalid_height_number_raises(sample_pandas_df):
+    with pytest.raises(ValueError, match="height"):
+        Table(sample_pandas_df, height=400)
 
 
 # ====== PANDAS ====== #
