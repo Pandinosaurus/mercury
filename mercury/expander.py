@@ -21,6 +21,12 @@ def _ensure_global_expander_styles():
         overflow: hidden;
       }}
 
+      .mljar-expander-box.is-borderless {{
+        border: 0;
+        border-radius: 0;
+        background: transparent;
+      }}
+
       .mljar-expander-content {{
         width: 100%;
         position: relative;
@@ -56,6 +62,9 @@ def _ensure_global_expander_styles():
         transition: opacity 300ms ease;
         pointer-events: none;
       }}
+      .mljar-expander-box.is-borderless .mljar-expander-content::before {{
+        background: transparent;
+      }}
 
       /* Opened state – natural "ease-out" movement */
       .mljar-expander-content.is-open {{
@@ -81,7 +90,21 @@ def _ensure_global_expander_styles():
     display(style_html)
 
 
-def Expander(label="Details", expanded=False, key="", append=False):
+def _set_class(widget, class_name: str, enabled: bool) -> None:
+    if enabled:
+        widget.add_class(class_name)
+    else:
+        widget.remove_class(class_name)
+
+
+def Expander(
+    label="Details",
+    expanded=False,
+    show_border=True,
+    header_background=True,
+    key="",
+    append=False,
+):
     """
     Create and display an Expander.
 
@@ -100,18 +123,33 @@ def Expander(label="Details", expanded=False, key="", append=False):
     """
     _ensure_global_expander_styles()
 
-    code_uid = WidgetsManager.get_code_uid("Expander", key=key, kwargs=dict(label=label))
+    code_uid = WidgetsManager.get_code_uid(
+        "Expander",
+        key=key,
+        kwargs=dict(
+            label=label,
+            show_border=show_border,
+            header_background=header_background,
+        ),
+    )
     cached = WidgetsManager.get_widget(code_uid)
     if cached:
         # Don't display again — that would append another copy in output.
         # Just return the existing Output area so user can write to it.
         _box, out, _header, _content_box = cached
+        _set_class(_box, "is-borderless", not show_border)
+        _header.label = label
+        _header.header_background = bool(header_background)
         if not append:
             out.clear_output(wait=True)
         display(_box)
         return out
 
-    header = _ExpanderHeaderWidget(label=label, expanded=expanded)
+    header = _ExpanderHeaderWidget(
+        label=label,
+        expanded=expanded,
+        header_background=bool(header_background),
+    )
 
     out = LayoutContextOutput(
         layout_frame=LayoutFrame(
@@ -136,6 +174,7 @@ def Expander(label="Details", expanded=False, key="", append=False):
 
     box = widgets.VBox([header, content_box], layout=widgets.Layout(width="100%"))
     box.add_class("mljar-expander-box")
+    _set_class(box, "is-borderless", not show_border)
 
     # Only display on first creation
     display(box)
@@ -146,6 +185,7 @@ def Expander(label="Details", expanded=False, key="", append=False):
 class _ExpanderHeaderWidget(anywidget.AnyWidget):
     label = traitlets.Unicode("Details").tag(sync=True)
     expanded = traitlets.Bool(False).tag(sync=True)
+    header_background = traitlets.Bool(True).tag(sync=True)
     custom_css = traitlets.Unicode(default_value="").tag(sync=True)
     position = traitlets.Enum(
         values=["sidebar", "inline", "bottom"],
@@ -172,8 +212,10 @@ class _ExpanderHeaderWidget(anywidget.AnyWidget):
 
       function syncUI() {
         const isOpen = !!model.get("expanded");
+        const hasBackground = !!model.get("header_background");
         header.setAttribute("aria-expanded", String(isOpen));
         header.classList.toggle("is-open", isOpen);
+        header.classList.toggle("is-transparent", !hasBackground);
       }
       syncUI();
 
@@ -184,6 +226,7 @@ class _ExpanderHeaderWidget(anywidget.AnyWidget):
       });
 
       model.on("change:expanded", syncUI);
+      model.on("change:header_background", syncUI);
       model.on("change:label", () => {
         text.textContent = model.get("label") || "Details";
       });
@@ -218,6 +261,12 @@ class _ExpanderHeaderWidget(anywidget.AnyWidget):
     }}
     .mljar-expander-header:hover {{
       background: {THEME.get('panel_bg_hover_2', '#efefef')};
+    }}
+    .mljar-expander-header.is-transparent {{
+      background: transparent;
+    }}
+    .mljar-expander-header.is-transparent:hover {{
+      background: transparent;
     }}
     .mljar-expander-icon {{
       display: inline-block;

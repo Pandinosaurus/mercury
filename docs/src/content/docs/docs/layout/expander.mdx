@@ -81,6 +81,25 @@ with advanced:
 ```
 
 
+### Plain Style
+
+Use `show_border=False` and `header_background=False` when you want the expander
+to blend into the surrounding layout.
+
+**Code**
+
+```python
+plain = mr.Expander(
+    label="More filters",
+    show_border=False,
+    header_background=False
+)
+
+with plain:
+    print("Borderless content")
+```
+
+
 ### Append Previous Content
 
 By default, `append=False`, so content from the previous run is cleared before new content is written.
@@ -128,6 +147,24 @@ If the same code cell is run again, Mercury reuses the previous expander instanc
 The `key` value is required when expanders are created inside loops.
 
 </Aside>
+
+---
+
+### show_border
+
+**type:** `bool`
+
+If `False`, the outer expander border and box background are removed.
+The default is `True`.
+
+---
+
+### header_background
+
+**type:** `bool`
+
+If `False`, the clickable header background is transparent.
+The default is `True`.
 
 ---
 

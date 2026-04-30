@@ -178,3 +178,47 @@ def test_expander_append_true_preserves_cached_output(monkeypatch):
 
     assert reused is out
     assert calls == []
+
+
+def test_expander_default_style_preserves_border_and_header_background(monkeypatch):
+    _disable_display(monkeypatch)
+    WidgetsManager.widgets.clear()
+
+    Expander("Details")
+    box, _out, header, _content_box = next(
+        value
+        for key, value in WidgetsManager.widgets.items()
+        if key.startswith("Expander.")
+    )
+
+    assert "is-borderless" not in box._dom_classes
+    assert header.header_background is True
+
+
+def test_expander_can_disable_border_and_header_background(monkeypatch):
+    _disable_display(monkeypatch)
+    WidgetsManager.widgets.clear()
+
+    Expander("Plain", show_border=False, header_background=False)
+    box, _out, header, _content_box = next(
+        value
+        for key, value in WidgetsManager.widgets.items()
+        if key.startswith("Expander.")
+    )
+
+    assert "is-borderless" in box._dom_classes
+    assert header.header_background is False
+
+
+def test_expander_style_flags_are_part_of_cache_key(monkeypatch):
+    _disable_display(monkeypatch)
+    WidgetsManager.widgets.clear()
+
+    bordered = Expander("Details", show_border=True, header_background=True)
+    plain = Expander("Details", show_border=False, header_background=False)
+
+    assert bordered is not plain
+    expander_keys = [
+        key for key in WidgetsManager.widgets.keys() if key.startswith("Expander.")
+    ]
+    assert len(expander_keys) == 2
