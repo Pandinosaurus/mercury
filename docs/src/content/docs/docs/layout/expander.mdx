@@ -81,7 +81,10 @@ with advanced:
 ```
 
 
-### Plain Style
+### Border and Header Background
+
+By default, the expander has an outer border, a box background, and a shaded clickable header.
+You can turn off the outer border and header background independently.
 
 Use `show_border=False` and `header_background=False` when you want the expander
 to blend into the surrounding layout.
@@ -89,6 +92,8 @@ to blend into the surrounding layout.
 **Code**
 
 ```python
+import mercury as mr
+
 plain = mr.Expander(
     label="More filters",
     show_border=False,
@@ -97,6 +102,16 @@ plain = mr.Expander(
 
 with plain:
     print("Borderless content")
+```
+
+You can also disable only one part:
+
+```python
+# No outer border, but keep the shaded header
+mr.Expander("Filters", show_border=False)
+
+# Keep the outer border, but make the header transparent
+mr.Expander("Filters", header_background=False)
 ```
 
 
@@ -154,7 +169,11 @@ The `key` value is required when expanders are created inside loops.
 
 **type:** `bool`
 
-If `False`, the outer expander border and box background are removed.
+Controls the outer expander box.
+
+* `True` — show the border and box background (default)
+* `False` — remove the outer border and box background
+
 The default is `True`.
 
 ---
@@ -163,7 +182,11 @@ The default is `True`.
 
 **type:** `bool`
 
-If `False`, the clickable header background is transparent.
+Controls the clickable header background.
+
+* `True` — use the default shaded header background (default)
+* `False` — make the header background transparent
+
 The default is `True`.
 
 ---
