@@ -4,7 +4,17 @@ from traitlets import TraitError
 import pandas as pd
 import polars as pl
 import mercury.table as m
+from mercury.manager import WidgetsManager
 from mercury.table import Table, TableWidget
+
+
+def setup_function():
+    WidgetsManager.widgets.clear()
+
+
+def teardown_function():
+    WidgetsManager.widgets.clear()
+
 
 # ====== EXAMPLE DATA ====== #
 
@@ -69,6 +79,48 @@ def test_table_with_all_arguments(sample_pandas_df):
     assert w.search is True
     assert w.select_rows is True
     assert w.show_index_col is True
+
+
+def test_table_reuses_cached_widget_for_same_data(monkeypatch):
+    monkeypatch.setattr(m, "display", lambda *_: None)
+
+    first = Table([{"name": "Alice", "score": 10}])
+    second = Table([{"name": "Alice", "score": 10}])
+
+    assert second is first
+    assert len(WidgetsManager.widgets) == 1
+
+
+def test_table_data_hash_separates_different_data(monkeypatch):
+    monkeypatch.setattr(m, "display", lambda *_: None)
+
+    first = Table([{"name": "Alice", "score": 10}])
+    second = Table([{"name": "Alice", "score": 11}])
+
+    assert second is not first
+    assert len(WidgetsManager.widgets) == 2
+
+
+def test_table_key_disambiguates_same_data(monkeypatch):
+    monkeypatch.setattr(m, "display", lambda *_: None)
+
+    first = Table([{"name": "Alice", "score": 10}], key="first")
+    second = Table([{"name": "Alice", "score": 10}], key="second")
+
+    assert second is not first
+    assert len(WidgetsManager.widgets) == 2
+
+
+def test_table_hashes_dataframe_content(monkeypatch):
+    monkeypatch.setattr(m, "display", lambda *_: None)
+
+    first = Table(pd.DataFrame({"name": ["Alice"], "score": [10]}))
+    second = Table(pd.DataFrame({"name": ["Alice"], "score": [10]}))
+    third = Table(pd.DataFrame({"name": ["Alice"], "score": [11]}))
+
+    assert second is first
+    assert third is not first
+    assert len(WidgetsManager.widgets) == 2
 
 
 def test_table_invalid_page_size_string_raises(sample_pandas_df):

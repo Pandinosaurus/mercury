@@ -1,12 +1,95 @@
 import anywidget
 import traitlets
 from IPython.display import display
+import hashlib
+import json
 import math
 from numbers import Real, Integral
 from typing import Any, List, Dict
 import datetime
 from .manager import WidgetsManager, MERCURY_MIMETYPE
 from .render_context import apply_widget_render_metadata, with_widget_render_metadata
+
+
+def _json_safe_table_value(value: Any) -> Any:
+    if value is None:
+        return None
+
+    if isinstance(value, (datetime.datetime, datetime.date)):
+        return value.isoformat()
+
+    if isinstance(value, bool):
+        return bool(value)
+
+    if isinstance(value, Integral):
+        return int(value)
+
+    if isinstance(value, Real):
+        try:
+            if math.isnan(value) or math.isinf(value):
+                return None
+        except TypeError:
+            pass
+        return float(value) if isinstance(value, float) else value
+
+    try:
+        if value != value:
+            return None
+    except Exception:
+        pass
+
+    if isinstance(value, dict):
+        return {str(k): _json_safe_table_value(v) for k, v in value.items()}
+
+    if isinstance(value, (list, tuple)):
+        return [_json_safe_table_value(v) for v in value]
+
+    try:
+        json.dumps(value)
+        return value
+    except TypeError:
+        return str(value)
+
+
+def _table_data_payload(data: Any) -> Any:
+    if data is None:
+        return None
+
+    to_dicts = getattr(data, "to_dicts", None)
+    if callable(to_dicts):
+        columns = getattr(data, "columns", None)
+        return {
+            "type": "polars",
+            "columns": _json_safe_table_value(list(columns) if columns is not None else []),
+            "records": _json_safe_table_value(to_dicts()),
+        }
+
+    to_dict = getattr(data, "to_dict", None)
+    if callable(to_dict):
+        try:
+            records = to_dict(orient="records")
+        except TypeError:
+            records = to_dict()
+        columns = getattr(data, "columns", None)
+        index = getattr(data, "index", None)
+        index_values = list(index) if index is not None else []
+        return {
+            "type": "pandas",
+            "columns": _json_safe_table_value(list(columns) if columns is not None else []),
+            "index": _json_safe_table_value(index_values),
+            "records": _json_safe_table_value(records),
+        }
+
+    return {
+        "type": type(data).__name__,
+        "records": _json_safe_table_value(data),
+    }
+
+
+def _table_data_hash(data: Any) -> str:
+    payload = _table_data_payload(data)
+    encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+    return hashlib.sha1(encoded.encode("utf-8")).hexdigest()[:12]
 
 
 def Table(
@@ -30,16 +113,7 @@ def Table(
             "Table: `width` must be a string ending with 'px' or '%', e.g. '400px' or '80%'"
         )
 
-    args = [
-        data,
-        page_size_int,
-        search,
-        select_rows,
-        width,
-        show_index_col,
-        position,
-    ]
-    kwargs = {
+    widget_kwargs = {
         "data": data,
         "page_size": page_size_int,
         "search": search,
@@ -48,14 +122,23 @@ def Table(
         "show_index_col": show_index_col,
         "position": position,
     }
-    code_uid = WidgetsManager.get_code_uid("Table", key=key, args=args, kwargs=kwargs)
+    uid_kwargs = {
+        "data_hash": _table_data_hash(data),
+        "page_size": page_size_int,
+        "search": search,
+        "select_rows": select_rows,
+        "width": width,
+        "show_index_col": show_index_col,
+        "position": position,
+    }
+    code_uid = WidgetsManager.get_code_uid("Table", key=key, kwargs=uid_kwargs)
     cached = WidgetsManager.get_widget(code_uid)
     if cached:
         apply_widget_render_metadata(cached)
         display(cached)
         return cached
 
-    instance = TableWidget(**with_widget_render_metadata(kwargs))
+    instance = TableWidget(**with_widget_render_metadata(widget_kwargs))
     WidgetsManager.add_widget(code_uid, instance)
     display(instance)
     return instance
