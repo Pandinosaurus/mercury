@@ -67,6 +67,7 @@ def Columns(
     border: str | None = None,
     position: Position = "inline",
     key: str = "",
+    append: bool = False,
 ) -> Tuple[ColumnOutput, ...]:
     """
     Create a responsive row of output columns.
@@ -96,6 +97,10 @@ def Columns(
         The default is `"inline"`.
     key : str
         Unique identifier used to differentiate widgets with identical arguments.
+    append : bool
+        If `False`, clear reused column outputs before writing new content.
+        If `True`, preserve previous content and append new output.
+        The default is `False`.
 
     Returns
     -------
@@ -120,6 +125,9 @@ def Columns(
         box, outs = cached
         # allow updating position on reuse
         box.position = position
+        if not append:
+            for out in outs:
+                out.clear_output(wait=True)
         _display_style()
         display(box)
         return outs

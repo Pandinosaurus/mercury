@@ -81,7 +81,7 @@ def _ensure_global_expander_styles():
     display(style_html)
 
 
-def Expander(label="Details", expanded=False, key=""):
+def Expander(label="Details", expanded=False, key="", append=False):
     """
     Create and display an Expander.
 
@@ -95,6 +95,8 @@ def Expander(label="Details", expanded=False, key=""):
     -----
     - Uses caching via WidgetsManager (stable `key` recommended).
     - Styling is injected once globally (theme-aware).
+    - By default, reused content is cleared on each call. Set
+      `append=True` to preserve previous content and append new output.
     """
     _ensure_global_expander_styles()
 
@@ -104,6 +106,8 @@ def Expander(label="Details", expanded=False, key=""):
         # Don't display again — that would append another copy in output.
         # Just return the existing Output area so user can write to it.
         _box, out, _header, _content_box = cached
+        if not append:
+            out.clear_output(wait=True)
         display(_box)
         return out
 

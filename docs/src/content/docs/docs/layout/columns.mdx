@@ -11,6 +11,7 @@ The **Columns** helper lets you create a responsive row of output areas (columns
 It is useful for building dashboards, side-by-side comparisons, charts grids, or multi-panel layouts.
 
 Each column is returned as an `Output` widget, so you can write into it using a `with` block.
+On rerun, reused column outputs are cleared by default so the layout shows the latest execution result.
 
 ## Live Demo
 
@@ -130,6 +131,21 @@ mr.Columns(
 ```
 
 
+### Append Previous Content
+
+By default, `append=False`, so content from the previous run is cleared before new content is written.
+Set `append=True` when you intentionally want to keep previous output and append new content on each run.
+
+**Code**
+
+```python
+col1, col2 = mr.Columns(2, append=True)
+
+with col1:
+    print("This output is appended on each run")
+```
+
+
 ## Columns Props
 
 ### n
@@ -203,9 +219,21 @@ The `key` value is required when Columns are created inside loops.
 
 ---
 
+### append
+
+**type:** `bool`
+
+Controls what happens when Mercury reuses the same Columns instance:
+
+* `False` — clear previous column content before writing new content (default)
+* `True` — keep previous content and append new output
+
+---
+
 ## Notes
 
 * Columns are responsive and automatically wrap when space is limited.
 * Each returned object is an `Output` widget.
 * Use `with column:` blocks to write content into columns.
+* By default, reruns replace previous column content. Use `append=True` to accumulate content.
 * Columns are ideal for charts, tables, metrics, or grouped controls.

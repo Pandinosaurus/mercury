@@ -76,3 +76,105 @@ def test_nested_layout_outputs_build_render_context_stack(monkeypatch):
     ]
     assert exp_ctx.render_slot_id == exp_slot_id
     assert exp_ctx.layout_path == f"{tabs_slot_id}/{cols_slot_id}/{exp_slot_id}"
+
+
+def test_columns_clears_cached_outputs_by_default(monkeypatch):
+    _disable_display(monkeypatch)
+
+    outs = Columns(2)
+    calls = []
+
+    for idx, out in enumerate(outs):
+        monkeypatch.setattr(
+            out,
+            "clear_output",
+            lambda wait=True, idx=idx: calls.append((idx, wait)),
+        )
+
+    reused = Columns(2)
+
+    assert reused is outs
+    assert calls == [(0, True), (1, True)]
+
+
+def test_columns_append_true_preserves_cached_outputs(monkeypatch):
+    _disable_display(monkeypatch)
+
+    outs = Columns(2)
+    calls = []
+
+    for out in outs:
+        monkeypatch.setattr(
+            out,
+            "clear_output",
+            lambda wait=True: calls.append(wait),
+        )
+
+    reused = Columns(2, append=True)
+
+    assert reused is outs
+    assert calls == []
+
+
+def test_tabs_clears_cached_outputs_by_default(monkeypatch):
+    _disable_display(monkeypatch)
+
+    outs = Tabs(labels=["a", "b"])
+    calls = []
+
+    for idx, out in enumerate(outs):
+        monkeypatch.setattr(
+            out,
+            "clear_output",
+            lambda wait=True, idx=idx: calls.append((idx, wait)),
+        )
+
+    reused = Tabs(labels=["a", "b"])
+
+    assert reused is outs
+    assert calls == [(0, True), (1, True)]
+
+
+def test_tabs_append_true_preserves_cached_outputs(monkeypatch):
+    _disable_display(monkeypatch)
+
+    outs = Tabs(labels=["a", "b"])
+    calls = []
+
+    for out in outs:
+        monkeypatch.setattr(
+            out,
+            "clear_output",
+            lambda wait=True: calls.append(wait),
+        )
+
+    reused = Tabs(labels=["a", "b"], append=True)
+
+    assert reused is outs
+    assert calls == []
+
+
+def test_expander_clears_cached_output_by_default(monkeypatch):
+    _disable_display(monkeypatch)
+
+    out = Expander("Details")
+    calls = []
+    monkeypatch.setattr(out, "clear_output", lambda wait=True: calls.append(wait))
+
+    reused = Expander("Details")
+
+    assert reused is out
+    assert calls == [True]
+
+
+def test_expander_append_true_preserves_cached_output(monkeypatch):
+    _disable_display(monkeypatch)
+
+    out = Expander("Details")
+    calls = []
+    monkeypatch.setattr(out, "clear_output", lambda wait=True: calls.append(wait))
+
+    reused = Expander("Details", append=True)
+
+    assert reused is out
+    assert calls == []

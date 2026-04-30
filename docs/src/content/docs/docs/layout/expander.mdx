@@ -12,6 +12,7 @@ The **Expander** helper lets you hide and show a block of content under a clicka
 It is useful for optional settings, advanced parameters, explanations, or details that should not be visible by default.
 
 `mr.Expander()` returns an output area, so you can write content into it using a `with` block.
+On rerun, reused expander content is cleared by default so it shows the latest execution result.
 
 ## Live Demo
 
@@ -80,6 +81,21 @@ with advanced:
 ```
 
 
+### Append Previous Content
+
+By default, `append=False`, so content from the previous run is cleared before new content is written.
+Set `append=True` when you intentionally want the expander to accumulate output across runs.
+
+**Code**
+
+```python
+details = mr.Expander(label="Run log", append=True)
+
+with details:
+    print("This line is appended on each run")
+```
+
+
 ## Expander Props
 
 ### label
@@ -115,8 +131,20 @@ The `key` value is required when expanders are created inside loops.
 
 ---
 
+### append
+
+**type:** `bool`
+
+Controls what happens when Mercury reuses the same Expander instance:
+
+* `False` — clear previous expander content before writing new content (default)
+* `True` — keep previous content and append new output
+
+---
+
 ## Notes
 
 * `mr.Expander()` returns an output area. Put content inside using `with`.
+* By default, reruns replace previous expander content. Use `append=True` to accumulate content.
 * The expander uses a single unified border and smooth open/close animation.
 * Use expanders for optional or advanced settings to keep the UI clean.

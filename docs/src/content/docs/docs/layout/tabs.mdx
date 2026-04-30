@@ -11,6 +11,7 @@ The **Tabs** helper lets you organize content into multiple tabs, showing one pa
 It is useful for dashboards, comparisons, multi-step outputs, or grouping related results without cluttering the UI.
 
 `mr.Tabs()` returns a tuple of output areas — one per tab.
+On rerun, reused tab outputs are cleared by default so each tab shows the latest execution result.
 
 ## Live Demo
 
@@ -84,6 +85,20 @@ mr.Tabs(
 )
 ```
 
+### Append Previous Content
+
+By default, `append=False`, so content from the previous run is cleared before new content is written.
+Set `append=True` when you intentionally want a tab to accumulate output across runs.
+
+**Code**
+
+```python
+tabs = mr.Tabs(labels=["Events", "Summary"], append=True)
+
+with tabs[0]:
+    print("This output is appended on each run")
+```
+
 ## Tabs Props
 
 ### labels
@@ -131,10 +146,22 @@ The `key` value is required when tabs are created inside loops.
 
 ---
 
+### append
+
+**type:** `bool`
+
+Controls what happens when Mercury reuses the same Tabs instance:
+
+* `False` — clear previous tab content before writing new content (default)
+* `True` — keep previous content and append new output
+
+---
+
 ## Notes
 
 * `mr.Tabs()` returns a tuple of output widgets.
 * Write content into a tab using `with tabs[i]: ...`.
 * Only one tab panel is visible at a time.
+* By default, reruns replace previous tab content. Use `append=True` to accumulate content.
 * Tabs automatically handle keyboard navigation (arrow keys, Home, End).
 * Content inside tabs is responsive and constrained to the container width.

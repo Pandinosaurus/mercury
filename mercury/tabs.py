@@ -122,7 +122,7 @@ class TabOutput(LayoutContextOutput):
         self.clear_output(wait=wait)
 
 # ---------- Public API ----------
-def Tabs(labels=("Tab 1", "Tab 2"), active=0, key=""):
+def Tabs(labels=("Tab 1", "Tab 2"), active=0, key="", append=False):
     """
     Create a tabbed container with one output area per tab.
 
@@ -146,6 +146,11 @@ def Tabs(labels=("Tab 1", "Tab 2"), active=0, key=""):
         Unique identifier used to distinguish Tabs instances
         with identical arguments. Required when Tabs are
         created inside loops.
+
+    append : bool, optional
+        If `False`, clear reused tab outputs before writing new content.
+        If `True`, preserve previous content and append new output.
+        Default is `False`.
 
     Returns
     -------
@@ -171,6 +176,9 @@ def Tabs(labels=("Tab 1", "Tab 2"), active=0, key=""):
     cached = WidgetsManager.get_widget(code_uid)
     if cached:
         box, outs, _header, _panels = cached
+        if not append:
+            for out in outs:
+                out.clear_output(wait=True)
         display(box)
         return outs
 
