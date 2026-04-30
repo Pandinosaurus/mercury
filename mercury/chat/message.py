@@ -104,6 +104,7 @@ class Message(widgets.HBox):
         self._md_buffer = ""
         self._html_buffer = ""
         self._text_buffer = ""
+        self._on_update = None
 
         if markdown != "":
             self.set_content(markdown=markdown)
@@ -127,6 +128,15 @@ class Message(widgets.HBox):
                 display(DHTML(self._html_buffer))
             elif self._mode == "text":
                 print(self._text_buffer)
+        self._notify_update()
+
+    def _notify_update(self):
+        if self._on_update is None:
+            return
+        try:
+            self._on_update()
+        except Exception:
+            pass
 
     def _set_mode(self, mode):
         """

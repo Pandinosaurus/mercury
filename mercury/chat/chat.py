@@ -3,6 +3,7 @@
 
 import ipywidgets as widgets
 from IPython.display import display, clear_output
+from threading import Timer
 
 import anywidget
 import traitlets
@@ -182,6 +183,8 @@ class Chat:
     height : str, optional
         CSS height for the chat message container. If empty, Chat keeps its
         natural height and the surrounding app/page container scrolls.
+    scroll_debounce : float, optional
+        Debounce delay in seconds for scrolling after message content updates.
 
     Notes
     -----
@@ -195,6 +198,7 @@ class Chat:
         placeholder: str = "💬 No messages yet. Start the conversation!",
         scroll_container_selector: str = "#mercury-main-panel, .mercury-main-panel",
         height: str = "",
+        scroll_debounce: float = 0.1,
     ):
         """
         Chat widget that holds Message widgets and auto-scrolls using anywidget.
@@ -210,6 +214,8 @@ class Chat:
         self.messages = []
         self.scroll_container_selector = scroll_container_selector
         self.height = str(height or "").strip()
+        self.scroll_debounce = max(float(scroll_debounce), 0.0)
+        self._scroll_timer = None
 
         # Placeholder label (same as before)
         self.placeholder_label = widgets.HTML(
@@ -252,8 +258,30 @@ class Chat:
         # Update visible children
         self.vbox.children = self.messages or [self.placeholder_label]
 
-        # Bump scroller tick to trigger JS scroll
+        self._scroll_now()
+
+    def _scroll_now(self):
+        if self._scroll_timer is not None:
+            self._scroll_timer.cancel()
+            self._scroll_timer = None
         self._scroller.tick += 1
+
+    def _schedule_scroll(self):
+        if self.scroll_debounce == 0:
+            self._scroll_now()
+            return
+        if self._scroll_timer is not None:
+            self._scroll_timer.cancel()
+        self._scroll_timer = Timer(self.scroll_debounce, self._scroll_now)
+        self._scroll_timer.daemon = True
+        self._scroll_timer.start()
+
+    def _attach_message(self, message: Message):
+        message._on_update = self._schedule_scroll
+
+    def _detach_message(self, message: Message):
+        if getattr(message, "_on_update", None) == self._schedule_scroll:
+            message._on_update = None
 
     # ---- public API (unchanged) ----
 
@@ -261,6 +289,7 @@ class Chat:
         """
         Add a Message widget to the chat and scroll to it.
         """
+        self._attach_message(message)
         self.messages.append(message)
         self._render()
 
@@ -268,6 +297,8 @@ class Chat:
         """
         Clear all messages from the chat.
         """
+        for message in self.messages:
+            self._detach_message(message)
         self.messages.clear()
         self._render()
 
@@ -278,5 +309,6 @@ class Chat:
         if not self.messages:
             return
 
-        self.messages.pop()
+        message = self.messages.pop()
+        self._detach_message(message)
         self._render()

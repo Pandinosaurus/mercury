@@ -157,6 +157,8 @@ msg.append_markdown("\n\nAnswer ready!")
 ```
 
 The chat scrolls as content grows, making it ideal for **LLM streaming responses**.
+Streaming scroll updates are debounced, so many small chunks are coalesced into
+fewer scroll operations.
 
 ## Chat Props
 
@@ -213,6 +215,24 @@ Examples:
 mr.Chat(height="600px")
 mr.Chat(height="70vh")
 mr.Chat(height="calc(100vh - 120px)")
+```
+
+---
+
+### scroll_debounce
+
+**type:** `float`
+
+Debounce delay in seconds for auto-scrolling after streamed message content changes.
+
+Default: `0.1`
+
+Use a lower value for more immediate scrolling, or a higher value to reduce scroll
+updates during very fast token streams.
+
+```python
+mr.Chat(scroll_debounce=0.05)
+mr.Chat(scroll_debounce=0)
 ```
 
 ---
