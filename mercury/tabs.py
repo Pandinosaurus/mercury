@@ -117,9 +117,8 @@ def _ensure_global_tabs_styles():
 
 
 class TabOutput(LayoutContextOutput):
-    """Tab widget with a convenient .clear() alias."""
-    def clear(self, wait: bool = True):
-        self.clear_output(wait=wait)
+    """Tab output widget."""
+    pass
 
 
 def _clear_output_widget(out) -> None:

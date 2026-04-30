@@ -56,9 +56,8 @@ class ColumnsBox(widgets.HBox):
 
 
 class ColumnOutput(LayoutContextOutput):
-    """Output widget with a convenient .clear() alias."""
-    def clear(self, wait: bool = True):
-        self.clear_output(wait=wait)
+    """Column output widget."""
+    pass
 
 
 def _clear_output_widget(out) -> None:

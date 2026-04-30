@@ -129,6 +129,22 @@ with details:
     print("This line is appended on each run")
 ```
 
+### Clear Content Manually
+
+The returned expander output supports `.clear()`.
+Use it when you want to clear expander content manually from your notebook code.
+
+**Code**
+
+```python
+details = mr.Expander(label="Run log")
+
+details.clear()
+
+with details:
+    print("Fresh details")
+```
+
 
 ## Expander Props
 
@@ -204,7 +220,7 @@ Controls what happens when Mercury reuses the same Expander instance:
 
 ## Notes
 
-* `mr.Expander()` returns an output area. Put content inside using `with`.
+* `mr.Expander()` returns an output area with a `.clear()` method. Put content inside using `with`.
 * By default, reruns replace previous expander content. Use `append=True` to accumulate content.
 * The expander uses a single unified border and smooth open/close animation.
 * Use expanders for optional or advanced settings to keep the UI clean.

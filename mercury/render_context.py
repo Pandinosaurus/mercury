@@ -157,3 +157,10 @@ class LayoutContextOutput(widgets.Output):
         finally:
             if self._layout_tokens:
                 pop_layout_frame(self._layout_tokens.pop())
+
+    def clear(self, wait: bool = True):
+        """
+        Clear displayed output and the synced output buffer.
+        """
+        self.clear_output(wait=wait)
+        self.outputs = ()

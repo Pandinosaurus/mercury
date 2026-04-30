@@ -167,6 +167,22 @@ with col1:
     print("This output is appended on each run")
 ```
 
+### Clear Content Manually
+
+Each returned column is an output widget and supports `.clear()`.
+Use it when you want to clear a column manually from your notebook code.
+
+**Code**
+
+```python
+col1, col2 = mr.Columns(2)
+
+col1.clear()
+
+with col1:
+    print("Fresh content")
+```
+
 
 ## Columns Props
 
@@ -262,7 +278,7 @@ Controls what happens when Mercury reuses the same Columns instance:
 ## Notes
 
 * Columns are responsive and automatically wrap when space is limited.
-* Each returned object is an `Output` widget.
+* Each returned object is an `Output` widget with a `.clear()` method.
 * Use `with column:` blocks to write content into columns.
 * By default, reruns replace previous column content. Use `append=True` to accumulate content.
 * Columns are ideal for charts, tables, metrics, or grouped controls.

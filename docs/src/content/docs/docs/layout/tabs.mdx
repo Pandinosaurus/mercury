@@ -99,6 +99,22 @@ with tabs[0]:
     print("This output is appended on each run")
 ```
 
+### Clear Content Manually
+
+Each returned tab output supports `.clear()`.
+Use it when you want to clear a tab manually from your notebook code.
+
+**Code**
+
+```python
+tabs = mr.Tabs(labels=["Events", "Summary"])
+
+tabs[0].clear()
+
+with tabs[0]:
+    print("Fresh tab content")
+```
+
 ## Tabs Props
 
 ### labels
@@ -159,7 +175,7 @@ Controls what happens when Mercury reuses the same Tabs instance:
 
 ## Notes
 
-* `mr.Tabs()` returns a tuple of output widgets.
+* `mr.Tabs()` returns a tuple of output widgets with `.clear()` methods.
 * Write content into a tab using `with tabs[i]: ...`.
 * Only one tab panel is visible at a time.
 * By default, reruns replace previous tab content. Use `append=True` to accumulate content.

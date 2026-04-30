@@ -146,6 +146,21 @@ def test_columns_append_true_preserves_output_buffers(monkeypatch):
     assert len(reused[1].outputs) == 1
 
 
+def test_columns_clear_method_resets_output_buffer(monkeypatch):
+    _disable_display(monkeypatch)
+    WidgetsManager.widgets.clear()
+
+    outs = Columns(2)
+    calls = []
+    monkeypatch.setattr(outs[0], "clear_output", lambda wait=True: calls.append(wait))
+    outs[0].append_stdout("first\n")
+
+    outs[0].clear(wait=False)
+
+    assert calls == [False]
+    assert outs[0].outputs == ()
+
+
 def test_columns_accepts_proportional_widths(monkeypatch):
     _disable_display(monkeypatch)
     WidgetsManager.widgets.clear()
@@ -282,6 +297,21 @@ def test_tabs_append_true_preserves_output_buffers(monkeypatch):
     assert len(reused[1].outputs) == 1
 
 
+def test_tabs_clear_method_resets_output_buffer(monkeypatch):
+    _disable_display(monkeypatch)
+    WidgetsManager.widgets.clear()
+
+    outs = Tabs(labels=["a", "b"])
+    calls = []
+    monkeypatch.setattr(outs[0], "clear_output", lambda wait=True: calls.append(wait))
+    outs[0].append_stdout("first\n")
+
+    outs[0].clear(wait=False)
+
+    assert calls == [False]
+    assert outs[0].outputs == ()
+
+
 def test_expander_clears_cached_output_by_default(monkeypatch):
     _disable_display(monkeypatch)
 
@@ -334,6 +364,21 @@ def test_expander_append_true_preserves_output_buffer(monkeypatch):
 
     assert reused is out
     assert len(reused.outputs) == 1
+
+
+def test_expander_clear_method_resets_output_buffer(monkeypatch):
+    _disable_display(monkeypatch)
+    WidgetsManager.widgets.clear()
+
+    out = Expander("Details")
+    calls = []
+    monkeypatch.setattr(out, "clear_output", lambda wait=True: calls.append(wait))
+    out.append_stdout("first\n")
+
+    out.clear(wait=False)
+
+    assert calls == [False]
+    assert out.outputs == ()
 
 
 def test_expander_default_style_preserves_border_and_header_background(monkeypatch):
