@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Literal, Tuple
 
 import ipywidgets as widgets
@@ -66,8 +67,36 @@ def _clear_output_widget(out) -> None:
         out.outputs = ()
 
 
+def _normalize_columns_spec(n: int | Sequence[float]) -> tuple[int, tuple[float, ...]]:
+    if isinstance(n, bool):
+        raise Exception("Columns: `n` must be an integer >= 1 or a non-empty list of positive widths.")
+
+    if isinstance(n, int):
+        if n < 1:
+            raise Exception("Columns: `n` must be an integer >= 1.")
+        return n, tuple(1.0 for _ in range(n))
+
+    if isinstance(n, (str, bytes)) or not isinstance(n, Sequence):
+        raise Exception("Columns: `n` must be an integer >= 1 or a non-empty list of positive widths.")
+
+    if len(n) == 0:
+        raise Exception("Columns: width list must not be empty.")
+
+    weights = []
+    for value in n:
+        try:
+            weight = float(value)
+        except Exception:
+            raise Exception("Columns: all width values must be numbers.")
+        if weight <= 0:
+            raise Exception("Columns: all width values must be greater than 0.")
+        weights.append(weight)
+
+    return len(weights), tuple(weights)
+
+
 def Columns(
-    n: int = 2,
+    n: int | Sequence[float] = 2,
     min_width: str = "100px",
     gap: str = "16px",
     border: str | None = None,
@@ -84,8 +113,10 @@ def Columns(
 
     Parameters
     ----------
-    n : int
-        Number of columns. Must be >= 1.
+    n : int | list[float] | tuple[float, ...]
+        Number of equal-width columns, or a list of proportional column widths.
+        For example, ``Columns(2)`` creates two equal columns and
+        ``Columns([0.4, 0.6])`` creates two columns with a 40/60 width ratio.
         The default is 2.
     min_width : str
         Minimum width for each column (e.g. `"240px"`).
@@ -114,11 +145,11 @@ def Columns(
         A tuple of output widgets you can write into with `with outs[i]: ...`.
     """
 
-    if not isinstance(n, int) or n < 1:
-        raise Exception("Columns: `n` must be an integer >= 1.")
+    column_count, column_weights = _normalize_columns_spec(n)
 
     kwargs = {
-        "n": n,
+        "n": column_count,
+        "widths": column_weights,
         "min_width": min_width,
         "gap": gap,
         "border": border,
@@ -146,7 +177,7 @@ def Columns(
                 slot_key=str(i),
             )
         )
-        for i in range(n)
+        for i in range(column_count)
     )
 
     box = ColumnsBox(
@@ -174,9 +205,9 @@ def Columns(
         else:
             border_to_apply = None
 
-    for out in outs:
+    for out, weight in zip(outs, column_weights):
         out.layout.min_width = min_width
-        out.layout.flex = "1 1 0px"
+        out.layout.flex = f"{weight:g} 1 0px"
         out.add_class("mljar-column")
 
         if border_to_apply:

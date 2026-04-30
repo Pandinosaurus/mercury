@@ -63,6 +63,28 @@ with c3:
 ```
 
 
+### Proportional Widths
+
+Pass a list of positive numbers to create columns with proportional widths.
+For example, `[0.4, 0.6]` creates two columns where the first takes about 40%
+and the second takes about 60% of the available row space.
+
+**Code**
+
+```python
+left, right = mr.Columns([0.4, 0.6])
+
+with left:
+    print("40% column")
+
+with right:
+    print("60% column")
+```
+
+The values are treated as ratios, so `[40, 60]`, `[0.4, 0.6]`, and `[2, 3]`
+all work.
+
+
 ### Minimum Width and Responsiveness
 
 Use `min_width` to control how narrow a column can become.
@@ -150,10 +172,17 @@ with col1:
 
 ### n
 
-**type:** `int`
+**type:** `int | list[float]`
 
-Number of columns.
-Must be at least 1.
+Number of equal-width columns, or a list of proportional widths.
+
+Examples:
+
+* `2` — two equal-width columns
+* `[0.4, 0.6]` — two columns with a 40/60 width ratio
+* `[1, 2, 1]` — three columns with a 1/2/1 width ratio
+
+Integer values must be at least 1. Width-list values must be positive numbers.
 
 ---
 

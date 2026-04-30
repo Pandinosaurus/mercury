@@ -146,6 +146,74 @@ def test_columns_append_true_preserves_output_buffers(monkeypatch):
     assert len(reused[1].outputs) == 1
 
 
+def test_columns_accepts_proportional_widths(monkeypatch):
+    _disable_display(monkeypatch)
+    WidgetsManager.widgets.clear()
+
+    left, right = Columns([0.4, 0.6])
+
+    assert left.layout.flex == "0.4 1 0px"
+    assert right.layout.flex == "0.6 1 0px"
+
+
+def test_columns_accepts_integer_like_width_ratios(monkeypatch):
+    _disable_display(monkeypatch)
+    WidgetsManager.widgets.clear()
+
+    cols = Columns([1, 2, 1])
+
+    assert len(cols) == 3
+    assert [col.layout.flex for col in cols] == [
+        "1 1 0px",
+        "2 1 0px",
+        "1 1 0px",
+    ]
+
+
+def test_columns_equal_count_and_width_specs_have_different_cache_keys(monkeypatch):
+    _disable_display(monkeypatch)
+    WidgetsManager.widgets.clear()
+
+    equal = Columns(2)
+    weighted = Columns([0.4, 0.6])
+
+    assert equal is not weighted
+    assert len(WidgetsManager.widgets) == 2
+
+
+def test_columns_rejects_empty_width_list():
+    WidgetsManager.widgets.clear()
+
+    try:
+        Columns([])
+    except Exception as exc:
+        assert "must not be empty" in str(exc)
+    else:
+        raise AssertionError("Columns([]) should fail")
+
+
+def test_columns_rejects_non_positive_widths():
+    WidgetsManager.widgets.clear()
+
+    try:
+        Columns([0.4, 0])
+    except Exception as exc:
+        assert "greater than 0" in str(exc)
+    else:
+        raise AssertionError("Columns([0.4, 0]) should fail")
+
+
+def test_columns_rejects_non_numeric_widths():
+    WidgetsManager.widgets.clear()
+
+    try:
+        Columns([0.4, "wide"])
+    except Exception as exc:
+        assert "must be numbers" in str(exc)
+    else:
+        raise AssertionError('Columns([0.4, "wide"]) should fail')
+
+
 def test_tabs_clears_cached_outputs_by_default(monkeypatch):
     _disable_display(monkeypatch)
 
