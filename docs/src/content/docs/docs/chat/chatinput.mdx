@@ -7,7 +7,7 @@ import { Code } from '@astrojs/starlight/components';
 import { Aside } from '@astrojs/starlight/components';
 import MercuryDemo from '../../../../components/MercuryDemoIframe.astro'
 
-The **ChatInput** widget provides a simple text input field with a send button, designed for
+The **ChatInput** widget provides a multiline text input field with a send button, designed for
 chat-style Mercury Apps. It is typically used together with [`Chat`](./chat) and
 [`Message`](./message) to build conversational interfaces.
 
@@ -41,6 +41,9 @@ A typical Mercury App flow looks like this:
 3. Your notebook code runs and reads `prompt.value`.
 4. After the notebook finishes executing, Mercury resets `prompt.value` back to `""`
    so the next run starts clean.
+
+Use `Shift+Enter` to insert a new line. If `send_on_enter=False`, Enter inserts
+new lines instead of submitting the message.
 
 While the app is generating a response, the send button automatically changes to
 `Stop`. Clicking it interrupts the running kernel execution and preserves the text
@@ -125,6 +128,8 @@ Default: `"➤"`
 If `True`, pressing Enter submits the message.
 
 Default: `True`
+
+Use `Shift+Enter` to add a new line without submitting.
 
 ---
 

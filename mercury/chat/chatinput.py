@@ -71,7 +71,7 @@ class ChatInputWidget(anywidget.AnyWidget):
     Text input widget for chat-style applications.
 
     The `ChatInputWidget` provides:
-    - a single-line text input
+    - a multiline text input
     - a send button
     - optional submission on Enter key
 
@@ -116,8 +116,8 @@ class ChatInputWidget(anywidget.AnyWidget):
       const container = document.createElement("div");
       container.classList.add("mljar-chatinput-container");
 
-      const input = document.createElement("input");
-      input.type = "text";
+      const input = document.createElement("textarea");
+      input.rows = 1;
       input.placeholder = model.get("placeholder") || "Type a message...";
       input.value = model.get("value") || "";
       input.classList.add("mljar-chatinput-input");
@@ -134,6 +134,26 @@ class ChatInputWidget(anywidget.AnyWidget):
 
       let lastModelValue = model.get("value") ?? "";
       let isGenerating = !!window.__mercuryExecutionRunning;
+      let lastHeight = 0;
+      let resizeNotifyFrame = null;
+
+      const notifyResize = () => {
+        if (resizeNotifyFrame !== null) return;
+        resizeNotifyFrame = requestAnimationFrame(() => {
+          resizeNotifyFrame = null;
+          window.dispatchEvent(new CustomEvent("mercury:bottom-resize-requested"));
+        });
+      };
+
+      const resizeInput = () => {
+        input.style.height = "auto";
+        const nextHeight = input.scrollHeight;
+        input.style.height = `${nextHeight}px`;
+        if (nextHeight !== lastHeight) {
+          lastHeight = nextHeight;
+          notifyResize();
+        }
+      };
 
       const renderButtonState = () => {
         if (isGenerating) {
@@ -173,6 +193,7 @@ class ChatInputWidget(anywidget.AnyWidget):
         const userHasTyped = input.value !== lastModelValue;
         if (!userHasTyped) {
             input.value = newVal;
+            resizeInput();
         }
 
         lastModelValue = newVal;
@@ -192,12 +213,15 @@ class ChatInputWidget(anywidget.AnyWidget):
         // Track it so subsequent model changes don't clobber a new draft.
         lastModelValue = msg;
         input.value = "";
+        resizeInput();
         model.save_changes();
       };
 
       btn.addEventListener("click", sendMessage);
 
       model.on("change:button_icon", renderButtonState);
+
+      input.addEventListener("input", resizeInput);
 
       input.addEventListener("keydown", (ev) => {
         if (isGenerating) return;
@@ -209,7 +233,12 @@ class ChatInputWidget(anywidget.AnyWidget):
         }
       });
 
+      resizeInput();
+
       return () => {
+        if (resizeNotifyFrame !== null) {
+          cancelAnimationFrame(resizeNotifyFrame);
+        }
         window.removeEventListener("mercury:execution-started", onExecutionStarted);
         window.removeEventListener("mercury:execution-finished", onExecutionFinished);
       };
@@ -236,15 +265,19 @@ class ChatInputWidget(anywidget.AnyWidget):
     .mljar-chatinput-input {{
         flex: 1 1 auto;
         width: 100%;
+        resize: none;
         border: { '1px solid ' + THEME.get('border_color', '#ccc') if THEME.get('border_visible', True) else 'none'};
         border-radius: {THEME.get('border_radius', '6px')};
         padding: 6px 10px;
         min-height: 1.6em;
+        max-height: min(160px, 30vh);
+        overflow-y: auto;
         background: {THEME.get('widget_background_color', '#fff')};
         color: {THEME.get('text_color', '#222')};
         box-sizing: border-box;
         padding: 10px;
         font-size: 0.9rem;
+        line-height: 1.4;
     }}
 
     .mljar-chatinput-input:focus {{

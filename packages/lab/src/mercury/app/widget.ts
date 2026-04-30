@@ -252,6 +252,17 @@ export class AppWidget extends Panel {
   private _busy?: BusyIndicator;
   private _fullWidth = false;
   private _toastContainer?: HTMLDivElement;
+  private _bottomResizeObserver?: ResizeObserver;
+  private _bottomResizeFrame: number | null = null;
+  private _requestBottomResize = () => {
+    if (this._bottomResizeFrame !== null) {
+      return;
+    }
+    this._bottomResizeFrame = window.requestAnimationFrame(() => {
+      this._bottomResizeFrame = null;
+      this.adjustBottomHeight();
+    });
+  };
   private _interruptExecution = () => {
     try {
       void this._model.context.sessionContext.session?.kernel?.interrupt();
@@ -358,6 +369,10 @@ export class AppWidget extends Panel {
     window.addEventListener(
       'mercury:interrupt-requested',
       this._interruptExecution
+    );
+    window.addEventListener(
+      'mercury:bottom-resize-requested',
+      this._requestBottomResize
     );
   }
 
@@ -504,10 +519,19 @@ export class AppWidget extends Panel {
     this._split = null as any;
 
     Signal.clearData(this);
+    if (this._bottomResizeFrame !== null) {
+      window.cancelAnimationFrame(this._bottomResizeFrame);
+      this._bottomResizeFrame = null;
+    }
+    this._bottomResizeObserver?.disconnect();
     try { this._busy?.dispose(); } catch { }
     window.removeEventListener(
       'mercury:interrupt-requested',
       this._interruptExecution
+    );
+    window.removeEventListener(
+      'mercury:bottom-resize-requested',
+      this._requestBottomResize
     );
     super.dispose();
   }
@@ -1410,6 +1434,11 @@ export class AppWidget extends Panel {
       // po zmianie DOM-u w bottom panelu – popraw wysokość
       requestAnimationFrame(() => this.adjustBottomHeight());
     });
+
+    this._bottomResizeObserver = new ResizeObserver(() => {
+      this._requestBottomResize();
+    });
+    this._bottomResizeObserver.observe(rightBottom.node);
 
     const rightSplit = new SplitPanel();
     rightSplit.orientation = 'vertical';
