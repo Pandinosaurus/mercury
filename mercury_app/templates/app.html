@@ -127,6 +127,10 @@
     /* Hide overlay when ready */
     html.hide-loader::before,
     html.hide-loader::after { display: none !important; }
+
+    html.no-navbar {
+      --header-height: 0px;
+    }
   </style>
 </head>
 
@@ -158,7 +162,15 @@
 
     /* Dynamically set --header-height to the real header height for perfect positioning */
     (function () {
+      var params = new URLSearchParams(window.location.search);
+      var hasNavbar = !params.has('no-navbar');
+
       function setHeaderHeightVar() {
+        if (!hasNavbar) {
+          document.documentElement.classList.add('no-navbar');
+          document.documentElement.style.setProperty('--header-height', '0px');
+          return;
+        }
         var hdr = document.querySelector('.hdr');
         if (!hdr) return;
         var h = hdr.offsetHeight || 52;
@@ -195,6 +207,8 @@
     (function () {
       const params = new URLSearchParams(window.location.search);
       if (params.has('no-navbar')) {
+        document.documentElement.classList.add('no-navbar');
+        document.documentElement.style.setProperty('--header-height', '0px');
         const header = document.getElementById('mercuryInitHeader');
         if (header) header.remove();
       }
