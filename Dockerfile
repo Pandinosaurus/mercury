@@ -3,8 +3,9 @@ FROM python:3.12-slim
 
 ENV PYTHONUNBUFFERED=1
 
-COPY dist/mercury-3.0.2-py3-none-any.whl .
-RUN pip install ./mercury-3.0.2-py3-none-any.whl
+#COPY dist/mercury-3.0.2-py3-none-any.whl .
+#RUN pip install ./mercury-3.0.2-py3-none-any.whl
+RUN pip install -U  mercury
 
 WORKDIR /workspace
 EXPOSE 8888
