@@ -253,8 +253,26 @@ export class AppWidget extends Panel {
   private _fullWidth = false;
   private _toastContainer?: HTMLDivElement;
   private _bottomResizeObserver?: ResizeObserver;
+  private _bottomMutationObserver?: MutationObserver;
+  private _bottomObservedElements = new WeakSet<Element>();
   private _bottomResizeFrame: number | null = null;
-  private _requestBottomResize = () => {
+  private _requestedBottomContentHeights = new Map<string, number>();
+  private _requestedBottomResizeSeqs = new Map<string, number>();
+  private _requestBottomResize = (event?: Event) => {
+    const detail = (event as CustomEvent<{
+      height?: number;
+      source?: string;
+      seq?: number;
+    }> | undefined)?.detail;
+    if (typeof detail?.height === 'number' && Number.isFinite(detail.height)) {
+      const source = detail.source || '__default__';
+      const seq = typeof detail.seq === 'number' ? detail.seq : 0;
+      const previousSeq = this._requestedBottomResizeSeqs.get(source) ?? -1;
+      if (seq >= previousSeq) {
+        this._requestedBottomResizeSeqs.set(source, seq);
+        this._requestedBottomContentHeights.set(source, detail.height);
+      }
+    }
     if (this._bottomResizeFrame !== null) {
       return;
     }
@@ -524,6 +542,7 @@ export class AppWidget extends Panel {
       this._bottomResizeFrame = null;
     }
     this._bottomResizeObserver?.disconnect();
+    this._bottomMutationObserver?.disconnect();
     try { this._busy?.dispose(); } catch { }
     window.removeEventListener(
       'mercury:interrupt-requested',
@@ -1435,10 +1454,22 @@ export class AppWidget extends Panel {
       requestAnimationFrame(() => this.adjustBottomHeight());
     });
 
+    this._bottomResizeObserver?.disconnect();
+    this._bottomObservedElements = new WeakSet<Element>();
     this._bottomResizeObserver = new ResizeObserver(() => {
       this._requestBottomResize();
     });
-    this._bottomResizeObserver.observe(rightBottom.node);
+    this.observeBottomContent(rightBottom.node);
+
+    this._bottomMutationObserver?.disconnect();
+    this._bottomMutationObserver = new MutationObserver(() => {
+      this.observeBottomContent(rightBottom.node);
+      this._requestBottomResize();
+    });
+    this._bottomMutationObserver.observe(rightBottom.node, {
+      childList: true,
+      subtree: true
+    });
 
     const rightSplit = new SplitPanel();
     rightSplit.orientation = 'vertical';
@@ -1528,6 +1559,91 @@ export class AppWidget extends Panel {
 
   private static readonly MAX_BOTTOM_PX = 320;
 
+  private observeBottomContent(root: HTMLElement): void {
+    if (!this._bottomResizeObserver) {
+      return;
+    }
+
+    const candidates = [
+      root,
+      ...Array.from(root.querySelectorAll<HTMLElement>(
+        [
+          '.jp-OutputArea',
+          '.jp-OutputArea-child',
+          '.jp-OutputArea-output',
+          '.lm-Widget'
+        ].join(',')
+      ))
+    ];
+
+    for (const element of candidates) {
+      if (
+        element !== root &&
+        (
+          element.classList.contains('mljar-chatinput-container') ||
+          !!element.querySelector?.('.mljar-chatinput-container')
+        )
+      ) {
+        continue;
+      }
+      if (this._bottomObservedElements.has(element)) {
+        continue;
+      }
+      this._bottomObservedElements.add(element);
+      this._bottomResizeObserver.observe(element);
+    }
+  }
+
+  private measureBottomContentHeight(): number {
+    if (!this._rightBottom) {
+      return 0;
+    }
+
+    const panelNode = this._rightBottom.node;
+    const panelStyles = window.getComputedStyle(panelNode);
+    const paddingY =
+      parseFloat(panelStyles.paddingTop || '0') +
+      parseFloat(panelStyles.paddingBottom || '0');
+
+    const panelRect = panelNode.getBoundingClientRect();
+
+    const chatInputs = panelNode.querySelectorAll<HTMLElement>(
+      '.mljar-chatinput-container'
+    );
+    if (chatInputs.length > 0) {
+      let contentBottom = 0;
+      for (const element of Array.from(chatInputs)) {
+        if (!element.offsetParent && element.getClientRects().length === 0) {
+          continue;
+        }
+        const rect = element.getBoundingClientRect();
+        contentBottom = Math.max(contentBottom, rect.bottom - panelRect.top);
+      }
+      return Math.max(0, contentBottom + paddingY);
+    }
+
+    let contentBottom = 0;
+    const descendants = panelNode.querySelectorAll<HTMLElement>(
+      [
+        '.jp-OutputArea-output > *',
+        '.jp-RenderedHTMLCommon',
+        '.jp-RenderedText',
+        '.jp-RenderedImage',
+        '.jp-RenderedJSON'
+      ].join(',')
+    );
+
+    for (const element of Array.from(descendants)) {
+      if (!element.offsetParent && element.getClientRects().length === 0) {
+        continue;
+      }
+      const rect = element.getBoundingClientRect();
+      contentBottom = Math.max(contentBottom, rect.bottom - panelRect.top);
+    }
+
+    return Math.max(panelNode.scrollHeight, contentBottom + paddingY);
+  }
+
   private adjustBottomHeight(maxPx = AppWidget.MAX_BOTTOM_PX): void {
     if (!this._rightSplit || !this._rightBottom) {
       return;
@@ -1542,10 +1658,20 @@ export class AppWidget extends Panel {
       return;
     }
 
-    // Needed pixels for the bottom content
+    // Needed pixels for the bottom content. Child bounds catch textarea
+    // autosize changes before the panel scrollHeight has settled.
+    const requestedHeight = Math.max(
+      0,
+      ...Array.from(this._requestedBottomContentHeights.values())
+    );
+    const measuredHeight = this.measureBottomContentHeight();
     const neededPx = Math.min(
       maxPx,
-      Math.max(0, this._rightBottom.node.scrollHeight)
+      Math.max(
+        0,
+        measuredHeight,
+        requestedHeight
+      )
     );
     // Convert to ratios for SplitPanel
     const bottomRatio = Math.max(0, Math.min(neededPx / totalH, 1) * 1.0);

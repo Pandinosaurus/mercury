@@ -122,47 +122,84 @@ class ChatInputWidget(anywidget.AnyWidget):
       input.value = model.get("value") || "";
       input.classList.add("mljar-chatinput-input");
 
+      const measureInput = document.createElement("textarea");
+      measureInput.rows = 1;
+      measureInput.classList.add("mljar-chatinput-input", "mljar-chatinput-measure");
+      measureInput.setAttribute("aria-hidden", "true");
+      measureInput.tabIndex = -1;
+
       const btn = document.createElement("button");
       btn.type = "button";
       btn.classList.add("mljar-chatinput-button");
-      btn.textContent = model.get("button_icon") || " ➤ ";
+      btn.innerHTML = `<span class="mljar-chatinput-send-icon" aria-hidden="true">${model.get("button_icon") || "➤"}</span>`;
       btn.setAttribute("aria-label", "Send message");
 
       container.appendChild(input);
       container.appendChild(btn);
+      container.appendChild(measureInput);
       el.appendChild(container);
 
       let lastModelValue = model.get("value") ?? "";
       let isGenerating = !!window.__mercuryExecutionRunning;
       let lastHeight = 0;
       let resizeNotifyFrame = null;
+      let resizeNotifyTimeout = null;
+      let resizeSeq = 0;
+      const resizeSource = `chatinput-${Math.random().toString(36).slice(2)}`;
+      let suppressNextValueSync = false;
 
       const notifyResize = () => {
-        if (resizeNotifyFrame !== null) return;
-        resizeNotifyFrame = requestAnimationFrame(() => {
-          resizeNotifyFrame = null;
-          window.dispatchEvent(new CustomEvent("mercury:bottom-resize-requested"));
-        });
+        if (resizeNotifyTimeout !== null) {
+          window.clearTimeout(resizeNotifyTimeout);
+        }
+        resizeNotifyTimeout = window.setTimeout(() => {
+          resizeNotifyTimeout = null;
+          if (resizeNotifyFrame !== null) return;
+          const seq = ++resizeSeq;
+          resizeNotifyFrame = requestAnimationFrame(() => {
+            resizeNotifyFrame = null;
+            const detail = {
+              height: container.getBoundingClientRect().height,
+              source: resizeSource,
+              seq
+            };
+            window.dispatchEvent(new CustomEvent("mercury:bottom-resize-requested", { detail }));
+          });
+        }, 90);
       };
 
-      const resizeInput = () => {
-        input.style.height = "auto";
-        const nextHeight = input.scrollHeight;
+      const resizeInput = (notify = true) => {
+        const styles = window.getComputedStyle(input);
+        const maxHeight = Math.min(160, Math.max(80, window.innerHeight * 0.3));
+        const borderY =
+          parseFloat(styles.borderTopWidth || "0") +
+          parseFloat(styles.borderBottomWidth || "0");
+        const minHeight = parseFloat(styles.minHeight || "0") || 0;
+        measureInput.style.width = `${input.getBoundingClientRect().width}px`;
+        measureInput.value = input.value || input.placeholder || "";
+        const nextHeight = Math.max(
+          minHeight,
+          Math.min(measureInput.scrollHeight + borderY, maxHeight)
+        );
         input.style.height = `${nextHeight}px`;
+        input.style.overflowY =
+          measureInput.scrollHeight + borderY > maxHeight + 1 ? "auto" : "hidden";
         if (nextHeight !== lastHeight) {
           lastHeight = nextHeight;
-          notifyResize();
+          if (notify) {
+            notifyResize();
+          }
         }
       };
 
       const renderButtonState = () => {
         if (isGenerating) {
-          btn.textContent = "Stop";
-          btn.classList.add("mljar-chatinput-button-stop");
+          btn.innerHTML = '<span class="mljar-chatinput-stop-icon" aria-hidden="true"></span>';
+          btn.classList.remove("mljar-chatinput-button-stop");
           btn.setAttribute("aria-label", "Stop response generation");
           btn.title = "Stop response generation";
         } else {
-          btn.textContent = model.get("button_icon") || " ➤ ";
+          btn.innerHTML = `<span class="mljar-chatinput-send-icon" aria-hidden="true">${model.get("button_icon") || "➤"}</span>`;
           btn.classList.remove("mljar-chatinput-button-stop");
           btn.setAttribute("aria-label", "Send message");
           btn.title = "";
@@ -188,6 +225,11 @@ class ChatInputWidget(anywidget.AnyWidget):
       model.on("change:value", () => {
         const newVal = model.get("value") ?? "";
 
+        if (suppressNextValueSync && newVal === lastModelValue) {
+            suppressNextValueSync = false;
+            return;
+        }
+
         // Only update the visible input if the user hasn't typed since
         // the last time we applied a model value.
         const userHasTyped = input.value !== lastModelValue;
@@ -212,30 +254,52 @@ class ChatInputWidget(anywidget.AnyWidget):
         // After submission we clear the input, but the model value becomes msg.
         // Track it so subsequent model changes don't clobber a new draft.
         lastModelValue = msg;
+        suppressNextValueSync = true;
         input.value = "";
-        resizeInput();
+        resizeInput(true);
         model.save_changes();
+      };
+
+      const insertNewlineAtCursor = () => {
+        const start = input.selectionStart ?? input.value.length;
+        const end = input.selectionEnd ?? input.value.length;
+        const before = input.value.slice(0, start);
+        const after = input.value.slice(end);
+        input.value = `${before}\n${after}`;
+        const cursor = start + 1;
+        input.selectionStart = cursor;
+        input.selectionEnd = cursor;
+        resizeInput(false);
       };
 
       btn.addEventListener("click", sendMessage);
 
       model.on("change:button_icon", renderButtonState);
 
-      input.addEventListener("input", resizeInput);
+      input.addEventListener("input", () => resizeInput(false));
+      input.addEventListener("blur", () => resizeInput(true));
 
       input.addEventListener("keydown", (ev) => {
         if (isGenerating) return;
         const sendOnEnter = !!model.get("send_on_enter");
         if (!sendOnEnter) return;
+        if (ev.key === "Enter" && ev.shiftKey) {
+          ev.preventDefault();
+          insertNewlineAtCursor();
+          return;
+        }
         if (ev.key === "Enter" && !ev.shiftKey) {
           ev.preventDefault();
           sendMessage();
         }
       });
 
-      resizeInput();
+      resizeInput(true);
 
       return () => {
+        if (resizeNotifyTimeout !== null) {
+          window.clearTimeout(resizeNotifyTimeout);
+        }
         if (resizeNotifyFrame !== null) {
           cancelAnimationFrame(resizeNotifyFrame);
         }
@@ -248,13 +312,11 @@ class ChatInputWidget(anywidget.AnyWidget):
 
     _css = f"""
     .mljar-chatinput-container {{
-        display: flex;
-        flex-direction: row;
-        align-items: center;
+        position: relative;
+        display: block;
         width: 100%;
         min-width: 160px;
         box-sizing: border-box;
-        gap: 8px;
         font-family: {THEME.get('font_family', 'Arial, sans-serif')};
         font-size: {THEME.get('font_size', '14px')};
         color: {THEME.get('text_color', '#222')};
@@ -263,19 +325,18 @@ class ChatInputWidget(anywidget.AnyWidget):
     }}
 
     .mljar-chatinput-input {{
-        flex: 1 1 auto;
+        display: block;
         width: 100%;
         resize: none;
         border: { '1px solid ' + THEME.get('border_color', '#ccc') if THEME.get('border_visible', True) else 'none'};
         border-radius: {THEME.get('border_radius', '6px')};
-        padding: 6px 10px;
-        min-height: 1.6em;
+        min-height: calc(1.4em + 24px);
         max-height: min(160px, 30vh);
-        overflow-y: auto;
+        overflow-y: hidden;
         background: {THEME.get('widget_background_color', '#fff')};
         color: {THEME.get('text_color', '#222')};
         box-sizing: border-box;
-        padding: 10px;
+        padding: 10px 72px 10px 12px;
         font-size: 0.9rem;
         line-height: 1.4;
     }}
@@ -285,26 +346,65 @@ class ChatInputWidget(anywidget.AnyWidget):
         border-color: {THEME.get('primary_color', '#007bff')};
     }}
 
+    .mljar-chatinput-measure {{
+        position: absolute;
+        left: -9999px;
+        top: 0;
+        visibility: hidden;
+        pointer-events: none;
+        height: auto;
+        min-height: 0;
+        max-height: none;
+        overflow-y: hidden;
+        z-index: -1;
+    }}
+
     .mljar-chatinput-button {{
-        flex: 0 0 auto;
+        position: absolute;
+        right: 0;
+        top: 8px;
+        bottom: 8px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
         border: none;
-        border-radius: {THEME.get('border_radius', '6px')} !important;
-        min-height: 1.6em;
+        border-radius: 0 {THEME.get('border_radius', '6px')} {THEME.get('border_radius', '6px')} 0 !important;
+        width: 60px;
         cursor: pointer;
         background: {THEME.get('primary_color', '#007bff')};
         color: {THEME.get('button_text_color', '#fff')};
         font-weight: bold;
-        padding: 11px;
-        padding-left: 18px;
-        padding-right: 18px;
+        padding: 0;
+        line-height: 1;
+        box-shadow: 0 2px 8px rgb(0 0 0 / 12%);
+        transition: filter 120ms ease, transform 120ms ease, box-shadow 120ms ease;
     }}
 
     .mljar-chatinput-button:hover {{
         filter: brightness(0.95);
+        box-shadow: 0 3px 10px rgb(0 0 0 / 16%);
     }}
 
-    .mljar-chatinput-button-stop {{
-        background: #dc2626;
+    .mljar-chatinput-button:active {{
+        transform: translateY(1px);
+        box-shadow: 0 1px 4px rgb(0 0 0 / 14%);
+    }}
+
+    .mljar-chatinput-send-icon {{
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        transform: translateX(1px);
+        font-size: 16px;
+        line-height: 1;
+    }}
+
+    .mljar-chatinput-stop-icon {{
+        display: inline-block;
+        width: 10px;
+        height: 10px;
+        background: currentColor;
+        border-radius: 2px;
     }}
     """
 
