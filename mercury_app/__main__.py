@@ -8,6 +8,8 @@ import sys
 
 from ._version import __version__
 
+CONFIG_ENV_VAR = "MERCURY_CONFIG_DIR"
+
 logo = r"""                            
 
      _ __ ___   ___ _ __ ___ _   _ _ __ _   _ 
@@ -19,6 +21,39 @@ logo = r"""
 """
 
 LEVEL_NAMES = ["CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG", "NOTSET"]
+
+
+def _curve_transport_encryption_available() -> bool:
+    """Return whether this Jupyter stack can safely enable CurveZMQ."""
+    try:
+        import zmq
+        from jupyter_client import KernelManager
+
+        return (
+            "transport_encryption" in KernelManager.class_traits()
+            and zmq.has("curve")
+        )
+    except (ImportError, AttributeError):
+        return False
+
+
+def _resolve_working_dir(working_dir: str | None) -> str | None:
+    if working_dir is None:
+        return None
+
+    resolved = os.path.abspath(os.path.expanduser(working_dir))
+    if not os.path.isdir(resolved):
+        raise ValueError(f"Working directory does not exist: {working_dir}")
+    return resolved
+
+
+def _get_arg_value(argv: list[str], *prefixes: str) -> str | None:
+    for prefix in prefixes:
+        for arg in argv:
+            if arg.startswith(prefix):
+                return arg.split("=", 1)[1]
+    return None
+
 
 def _parse_and_inject(argv):
     """
@@ -36,8 +71,12 @@ def _parse_and_inject(argv):
     # New: optional generic --token flag
     parser.add_argument("--token", help="Token for Jupyter server", default=None)
 
+    # Mercury working directory used as the process cwd and Jupyter root dir
+    parser.add_argument("--working-dir", help="Directory used as Mercury working directory", default=None)
+
     ns, rest = parser.parse_known_args(argv[1:])
     new_argv = [argv[0]] + rest
+    working_dir = _resolve_working_dir(ns.working_dir)
 
     # ----------------------------
     # LOG LEVEL
@@ -151,50 +190,29 @@ def _parse_and_inject(argv):
             new_argv.append(f"--MercuryApp.timeout={timeout_int}")
 
     # ----------------------------
-    # XSRF HANDLING
-    # Disable XSRF only when server is public:
-    # - no token (empty)
-    # - no password
-    # ----------------------------
-
-    def _get_arg_value(prefix: str):
-        for a in new_argv:
-            if a.startswith(prefix):
-                return a.split("=", 1)[1]
-        return None
-
-    # Detect "no token" after your injection
-    # You inject: --IdentityProvider.token=''  OR --IdentityProvider.token='<token>'
-    idp_token_val = _get_arg_value("--IdentityProvider.token=")
-    srv_token_val = _get_arg_value("--ServerApp.token=")
-
-    # Normalize: treat '' or "" as empty
-    def _is_empty_token(v):
-        if v is None:
-            return True
-        v = v.strip()
-        return v in ("''", '""', "''\n", '""\n', "")  # be defensive
-
-    token_is_empty = _is_empty_token(idp_token_val) and _is_empty_token(srv_token_val)
-
-    # Detect if password is set (either hashed_password or ServerApp.password)
-    password_is_set = any(
-        a.startswith("--IdentityProvider.hashed_password=") or a.startswith("--ServerApp.password=")
-        for a in new_argv
-    )
-
-    disable_xsrf_already_set = any(
-        a.startswith("--ServerApp.disable_check_xsrf=") for a in new_argv
-    )
-
-    if token_is_empty and not password_is_set and not disable_xsrf_already_set:
-        new_argv.append("--ServerApp.disable_check_xsrf=True")
-
-    # ----------------------------
     # OTHER DEFAULTS
     # ----------------------------
+    if working_dir and not any(a.startswith("--ServerApp.root_dir=") for a in new_argv):
+        new_argv.append(f"--ServerApp.root_dir={working_dir}")
+
+    mercury_timeout = _get_arg_value(
+        new_argv,
+        "--MercuryApp.timeout=",
+        "--timeout=",
+    )
+    if mercury_timeout not in (None, ""):
+        if not any(a.startswith("--ServerApp.shutdown_no_activity_timeout=") for a in new_argv):
+            new_argv.append(f"--ServerApp.shutdown_no_activity_timeout={mercury_timeout}")
+
     new_argv.append("--ContentsManager.allow_hidden=True")
     new_argv.append("--MappingKernelManager.default_kernel_name='python3'")
+
+    encryption_already_set = any(
+        arg.startswith("--KernelManager.transport_encryption")
+        for arg in new_argv
+    )
+    if not encryption_already_set and _curve_transport_encryption_available():
+        new_argv.append("--KernelManager.transport_encryption=auto")
 
     # Build ServerApp.tornado_settings if not already provided
     tornado_already_set = any(
@@ -245,14 +263,26 @@ def _parse_and_inject(argv):
 
         new_argv.append(f"--ServerApp.tornado_settings={tornado_settings!r}")
 
-    return new_argv
+    return new_argv, working_dir
+
+
+def _activate_working_dir(working_dir: str | None) -> None:
+    if working_dir is not None:
+        os.environ[CONFIG_ENV_VAR] = working_dir
+        os.chdir(working_dir)
 
 def main(argv=None):
     if argv is None:
         argv = sys.argv
     print(logo)
     print(f"Version: {__version__}")
-    sys.argv = _parse_and_inject(argv)
+    try:
+        sys.argv, working_dir = _parse_and_inject(argv)
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        raise SystemExit(1) from exc
+
+    _activate_working_dir(working_dir)
     from mercury_app.app import main as _app_main
     return _app_main()
 

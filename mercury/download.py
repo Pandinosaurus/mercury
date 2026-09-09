@@ -8,6 +8,7 @@ import traitlets
 from IPython.display import display
 
 from .manager import WidgetsManager, MERCURY_MIMETYPE
+from .theme import THEME
 
 Position = Literal["sidebar", "inline", "bottom"]
 
@@ -98,7 +99,7 @@ def Download(
     cached = WidgetsManager.get_widget(code_uid)
     if cached:
         display(cached)
-        return 
+        return cached
 
     instance = DownloadWidget(
         data=str(data),
@@ -110,6 +111,7 @@ def Download(
     )
     WidgetsManager.add_widget(code_uid, instance)
     display(instance)
+    return instance
 
 
 class DownloadWidget(anywidget.AnyWidget):
@@ -124,16 +126,18 @@ class DownloadWidget(anywidget.AnyWidget):
     }
 
     function render({ model, el }) {
-        el.innerHTML = ""; // Clear old content
+        el.innerHTML = "";
 
-        let container = document.createElement("div");
-        container.style.display = "flex";
-        container.style.flexDirection = "column";
-        container.style.alignItems = "flex-start";
+        const container = document.createElement("div");
+        container.classList.add("mljar-download-container");
 
-        let btn = document.createElement("button");
-        btn.innerHTML = model.get("label") || "Download";
+        const btn = document.createElement("button");
+        btn.type = "button";
         btn.classList.add("mljar-download-btn");
+
+        function syncFromModel() {
+            btn.textContent = model.get("label") || "Download";
+        }
 
         btn.onclick = () => {
             const data = model.get("data") || "";
@@ -164,25 +168,55 @@ class DownloadWidget(anywidget.AnyWidget):
         container.appendChild(btn);
         el.appendChild(container);
 
-        let styleTag = document.createElement("style");
-        styleTag.textContent = `
-        .mljar-download-btn {
-            padding: 6px 20px;
-            background: #0081fa;
-            color: #fff;
-            border-radius: 7px;
-            border: none;
-            font-size: 1em;
-            cursor: pointer;
-            margin: 4px 0;
-        }
-        .mljar-download-btn:hover {
-            background: #0059a8;
-        }
-        `;
-        el.appendChild(styleTag);
+        model.on("change:label", syncFromModel);
+        syncFromModel();
     }
     export default { render };
+    """
+
+    _css = f"""
+    .mljar-download-container {{
+        display: inline-flex;
+        width: auto;
+        font-family: {THEME.get('font_family', 'Arial, sans-serif')};
+        padding-left: 4px;
+        padding-right: 4px;
+    }}
+
+    .mljar-download-btn {{
+        background: {THEME.get('primary_color', '#007bff')};
+        color: {THEME.get('widget_background_color', '#fff')};
+        border: 2px solid {THEME.get('primary_color', '#007bff')};
+        border-radius: {THEME.get('border_radius', '8px')};
+        padding: 6px 18px;
+        margin-top: 5px;
+        margin-bottom: 5px;
+        cursor: pointer;
+        transition: background 0.2s, color 0.2s, border-color 0.2s;
+        user-select: none;
+        outline: none;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        font-size: 1.08em;
+        font-weight: 600;
+    }}
+
+    .mljar-download-btn:hover {{
+        background: {THEME.get('hover_background_color', '#f8fafc')};
+        color: {THEME.get('primary_color', '#007bff')};
+    }}
+
+    .mljar-download-btn:active {{
+        background: {THEME.get('selected_background_color', '#eef3ff')};
+        color: {THEME.get('accent_color', THEME.get('primary_color', '#007bff'))};
+    }}
+
+    .mljar-download-btn:focus-visible {{
+        outline: none;
+        border-color: {THEME.get('focus_border_color', THEME.get('accent_color', '#4c7cf0'))};
+    }}
     """
 
     data = traitlets.Unicode("").tag(sync=True)  # base64 or text

@@ -108,12 +108,14 @@ def DateTimeInput(
     code_uid = WidgetsManager.get_code_uid("DateTimeInput", key=key, args=args, kwargs=kwargs)
     cached = WidgetsManager.get_widget(code_uid)
     if cached:
+        WidgetsManager.register_input(code_uid, cached, key=key, url_key=url_key)
         apply_widget_render_metadata(cached)
         display(cached)
         return cached
 
     instance = DateTimeInputWidget(**with_widget_render_metadata(kwargs))
     WidgetsManager.add_widget(code_uid, instance)
+    WidgetsManager.register_input(code_uid, instance, key=key, url_key=url_key)
     display(instance)
     return instance
 
@@ -175,31 +177,46 @@ class DateTimeInputWidget(anywidget.AnyWidget):
       font-family: {THEME.get('font_family', 'Arial, sans-serif')};
       font-size: {THEME.get('font_size', '14px')};
       color: {THEME.get('text_color', '#222')};
-      margin-bottom: 8px;
       padding-left: 4px;
       padding-right: 4px;
       box-sizing: border-box;
     }}
 
     .mljar-datetime-label {{
+      padding-top: 6px;
       margin-bottom: 4px;
       font-weight: 600;
     }}
 
     .mljar-datetime-input {{
       width: 100%;
-      padding: 6px;
+      min-height: 40px;
+      padding: 9px 10px;
       border: 1px solid {THEME.get('border_color', '#ccc')};
       border-radius: {THEME.get('border_radius', '6px')};
       background: {THEME.get('widget_background_color', '#fff')};
       color: {THEME.get('text_color', '#222')};
       box-sizing: border-box;
+      line-height: 1.4;
     }}
 
     .mljar-datetime-input:disabled {{
       background: #f5f5f5;
       color: #888;
       cursor: not-allowed;
+    }}
+
+    .mljar-datetime-input:focus {{
+      outline: none;
+      border-color: {THEME.get('focus_border_color', THEME.get('accent_color', '#4c7cf0'))};
+      box-shadow: none;
+    }}
+
+    @media (max-width: 768px) {{
+      .mljar-datetime-input {{
+        min-height: 44px;
+        padding: 10px 12px;
+      }}
     }}
     """
 

@@ -126,10 +126,36 @@ def test_selectwidget_trait_defaults():
     assert w.position == "sidebar"
 
 
+def test_select_passes_disabled_and_hidden_to_widget(monkeypatch):
+    monkeypatch.setattr(m, "display", lambda *_: None)
+    WidgetsManager.clear()
+
+    widget = Select(
+        label="Choose color",
+        choices=["red", "green", "blue"],
+        value="green",
+        disabled=True,
+        hidden=True,
+    )
+
+    assert widget.disabled is True
+    assert widget.hidden is True
+
+
 def test_selectwidget_invalid_position_raises_traiterror():
     w = SelectWidget()
     with pytest.raises(TraitError):
         w.position = "top"  # invalid
+
+
+def test_select_widget_caret_click_toggles_open_dropdown():
+    esm = SelectWidget._esm
+    css = SelectWidget._css
+
+    assert "if (event.target === caret && isOpen)" in esm
+    assert "closeDropdown();" in esm
+    assert "input.blur();" in esm
+    assert "pointer-events: auto;" in css
 
 
 # --- _repr_mimebundle_ / MERCURY_MIMETYPE integration -----------------------------

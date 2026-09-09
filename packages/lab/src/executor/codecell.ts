@@ -1,6 +1,7 @@
 import { ISessionContext } from '@jupyterlab/apputils';
 
 import { CodeCell } from '@jupyterlab/cells';
+import { PageConfig } from '@jupyterlab/coreutils';
 import { Kernel, KernelMessage } from '@jupyterlab/services';
 import { JSONObject } from '@lumino/coreutils';
 
@@ -22,7 +23,16 @@ export async function codeCellExecute(
     }, false);
     return;
   }
-  const cellId = { cellId: model.sharedModel.getId() };
+  const id = model.sharedModel.getId();
+  const suppliedMercury = (metadata as any)?.mercury ?? {};
+  const cellId = {
+    cellId: id,
+    mercury: {
+      ...suppliedMercury,
+      kind: 'cell',
+      cell_id: id
+    }
+  };
   metadata = {
     ...model.metadata,
     ...metadata,
@@ -81,19 +91,34 @@ export async function codeCellExecute(
 
 export async function executeSilently(
   sessionContext: ISessionContext,
-  code: string
+  action: string,
+  payload: JSONObject,
+  authoringCode: string
 ): Promise<void> {
   const kernel = sessionContext.session?.kernel;
   if (!kernel) {
     return;
   }
-  const future = kernel.requestExecute({
-    code,
-    silent: true, // <- no iopub execute_input, etc.
-    store_history: false, // <- not added to history
-    stop_on_error: false,
-    allow_stdin: false
-  });
+  const standalone = PageConfig.getOption('mercuryStandalone') === 'true';
+  const future = kernel.requestExecute(
+    {
+      code: standalone ? '' : authoringCode,
+      silent: true, // <- no iopub execute_input, etc.
+      store_history: false, // <- not added to history
+      stop_on_error: false,
+      allow_stdin: false
+    },
+    false,
+    standalone
+      ? {
+          mercury: {
+            kind: 'action',
+            name: action,
+            payload
+          }
+        }
+      : undefined
+  );
   try {
     await future.done;
   } catch {
@@ -113,5 +138,5 @@ if WidgetsManager is not None:
     WidgetsManager.clear()
 `;
 
-  return executeSilently(sessionContext, clearCode);
+  return executeSilently(sessionContext, 'widgets.clear', {}, clearCode);
 }

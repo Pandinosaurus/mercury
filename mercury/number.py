@@ -121,7 +121,7 @@ def NumberInput(
         step=step_f,
     )
 
-    args = [label, value_f, min_f, max_f, step_f, url_key, position]
+    args = [label, value_f, min_f, max_f, step_f, url_key, position, disabled, hidden]
     kwargs = {
         "label": label,
         "value": value_f,
@@ -129,18 +129,22 @@ def NumberInput(
         "max": max_f,
         "step": step_f,
         "url_key": url_key,
-        "position": position
+        "position": position,
+        "disabled": disabled,
+        "hidden": hidden,
     }
 
     code_uid = WidgetsManager.get_code_uid("NumberInput", key=key, args=args, kwargs=kwargs)
     cached = WidgetsManager.get_widget(code_uid)
     if cached:
+        WidgetsManager.register_input(code_uid, cached, key=key, url_key=url_key)
         apply_widget_render_metadata(cached)
         display(cached)
         return cached
 
     instance = NumberInputWidget(**with_widget_render_metadata(kwargs))
     WidgetsManager.add_widget(code_uid, instance)
+    WidgetsManager.register_input(code_uid, instance, key=key, url_key=url_key)
     display(instance)
     return instance
 
@@ -154,18 +158,122 @@ class NumberInputWidget(anywidget.AnyWidget):
       const topLabel = document.createElement("div");
       topLabel.classList.add("mljar-number-label");
 
+      const fieldRow = document.createElement("div");
+      fieldRow.classList.add("mljar-number-field-row");
+
       const input = document.createElement("input");
       input.type = "number";
       input.classList.add("mljar-number-input");
 
+      const decrementBtn = document.createElement("button");
+      decrementBtn.type = "button";
+      decrementBtn.classList.add("mljar-number-step-btn", "mljar-number-step-down");
+      decrementBtn.textContent = "-";
+      decrementBtn.setAttribute("aria-label", "Decrease value");
+
+      const incrementBtn = document.createElement("button");
+      incrementBtn.type = "button";
+      incrementBtn.classList.add("mljar-number-step-btn", "mljar-number-step-up");
+      incrementBtn.textContent = "+";
+      incrementBtn.setAttribute("aria-label", "Increase value");
+
+      const controls = document.createElement("div");
+      controls.classList.add("mljar-number-controls");
+
+      controls.appendChild(decrementBtn);
+      controls.appendChild(incrementBtn);
+      fieldRow.appendChild(input);
+      fieldRow.appendChild(controls);
+
       container.appendChild(topLabel);
-      container.appendChild(input);
+      container.appendChild(fieldRow);
       el.appendChild(container);
 
       function clamp(val, min, max) {
         if (Number.isFinite(min) && val < min) return min;
         if (Number.isFinite(max) && val > max) return max;
         return val;
+      }
+
+      function normalizeStep(step) {
+        return Number.isFinite(step) && step > 0 ? step : 1;
+      }
+
+      function snapToStep(value, min, step) {
+        const safeStep = normalizeStep(step);
+        const base = Number.isFinite(min) ? min : 0;
+        const steps = Math.round((value - base) / safeStep);
+        const snapped = base + steps * safeStep;
+        const precision = Math.max(
+          0,
+          (String(safeStep).split(".")[1] || "").length
+        );
+
+        return Number(snapped.toFixed(precision + 2));
+      }
+
+      function isOnStepGrid(value, min, step) {
+        const safeStep = normalizeStep(step);
+        const base = Number.isFinite(min) ? min : 0;
+        const steps = (value - base) / safeStep;
+        const nearest = Math.round(steps);
+        const epsilon = Math.max(1e-9, safeStep * 1e-9);
+
+        return Math.abs(steps - nearest) <= epsilon;
+      }
+
+      function getCurrentBounds() {
+        return {
+          min: Number(model.get("min")),
+          max: Number(model.get("max")),
+        };
+      }
+
+      function isTransientDraft(raw) {
+        return raw === "" || raw === "-" || raw === "." || raw === "-.";
+      }
+
+      let isEditing = false;
+      const INPUT_COMMIT_DEBOUNCE_MS = 400;
+
+      function clearPendingDraftCommit() {
+        if (debounceTimer) clearTimeout(debounceTimer);
+        pendingDraftValue = null;
+      }
+
+      function parseDraftValue(rawValue) {
+        const raw = String(rawValue).trim();
+        if (isTransientDraft(raw)) {
+          return { kind: "transient" };
+        }
+
+        const value = Number(raw);
+        if (!Number.isFinite(value)) {
+          return { kind: "invalid" };
+        }
+
+        return { kind: "number", value };
+      }
+
+      function commitValue(nextValue, saveNow = true) {
+        const { min, max } = getCurrentBounds();
+        const step = Number(model.get("step"));
+        const parsed = parseDraftValue(nextValue);
+        if (parsed.kind !== "number") {
+          syncFromModel();
+          return;
+        }
+
+        let v = parsed.value;
+        v = clamp(v, min, max);
+        v = snapToStep(v, min, step);
+        v = clamp(v, min, max);
+        input.value = String(v);
+        model.set("value", v);
+
+        if (saveNow) {
+          model.save_changes();
+        }
       }
 
       function syncFromModel() {
@@ -180,31 +288,89 @@ class NumberInputWidget(anywidget.AnyWidget):
         if (Number.isFinite(step)) input.step = String(step); else input.removeAttribute("step");
 
         const v = Number(model.get("value"));
-        input.value = Number.isFinite(v) ? String(v) : "";
+        if (!isEditing) {
+          input.value = Number.isFinite(v) ? String(v) : "";
+        }
 
         const disabled = !!model.get("disabled");
         input.disabled = disabled;
+        incrementBtn.disabled = disabled;
+        decrementBtn.disabled = disabled;
 
         const hidden = !!model.get("hidden");
         container.style.display = hidden ? "none" : "flex";
       }
 
       let debounceTimer = null;
+      let pendingDraftValue = null;
+      input.addEventListener("focus", () => {
+        isEditing = true;
+      });
+
       input.addEventListener("input", () => {
         if (model.get("disabled")) return;
 
-        const min = Number(model.get("min"));
-        const max = Number(model.get("max"));
+        const parsed = parseDraftValue(input.value);
+        if (parsed.kind !== "number") {
+          clearPendingDraftCommit();
+          return;
+        }
 
-        let v = Number(input.value);
-        if (!Number.isFinite(v)) return;
+        const v = parsed.value;
+        const { min, max } = getCurrentBounds();
+        const step = Number(model.get("step"));
+        if (Number.isFinite(min) && v < min) {
+          clearPendingDraftCommit();
+          return;
+        }
+        if (Number.isFinite(max) && v > max) {
+          clearPendingDraftCommit();
+          return;
+        }
+        if (!isOnStepGrid(v, min, step)) {
+          clearPendingDraftCommit();
+          return;
+        }
 
-        v = clamp(v, min, max);
-        input.value = String(v);
-
-        model.set("value", v);
+        pendingDraftValue = v;
         if (debounceTimer) clearTimeout(debounceTimer);
-        debounceTimer = setTimeout(() => model.save_changes(), 200);
+        debounceTimer = setTimeout(() => {
+          if (pendingDraftValue === null) return;
+          model.set("value", pendingDraftValue);
+          model.save_changes();
+          pendingDraftValue = null;
+        }, INPUT_COMMIT_DEBOUNCE_MS);
+      });
+
+      input.addEventListener("blur", () => {
+        isEditing = false;
+        clearPendingDraftCommit();
+        commitValue(input.value, true);
+      });
+
+      input.addEventListener("keydown", event => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          input.blur();
+        }
+      });
+
+      incrementBtn.addEventListener("click", () => {
+        if (model.get("disabled")) return;
+        const current = Number(model.get("value"));
+        const step = normalizeStep(Number(model.get("step")));
+        const min = Number(model.get("min"));
+        const base = Number.isFinite(current) ? current : 0;
+        commitValue(snapToStep(base + step, min, step));
+      });
+
+      decrementBtn.addEventListener("click", () => {
+        if (model.get("disabled")) return;
+        const current = Number(model.get("value"));
+        const step = normalizeStep(Number(model.get("step")));
+        const min = Number(model.get("min"));
+        const base = Number.isFinite(current) ? current : 0;
+        commitValue(snapToStep(base - step, min, step));
       });
 
       model.on("change:value", syncFromModel);
@@ -252,34 +418,141 @@ class NumberInputWidget(anywidget.AnyWidget):
       font-family: {THEME.get('font_family', 'Arial, sans-serif')};
       font-size: {THEME.get('font_size', '14px')};
       color: {THEME.get('text_color', '#222')};
-      margin-bottom: 8px;
       padding-left: 4px;
       padding-right: 4px;
       box-sizing: border-box;
     }}
 
     .mljar-number-label {{
+      padding-top: 6px;
       margin-bottom: 4px;
       font-weight: 600;
     }}
 
-    .mljar-number-input {{
+    .mljar-number-field-row {{
+      display: flex;
+      align-items: stretch;
       width: 100%;
-      padding: 6px;
+      min-height: 40px;
       border: 1px solid {THEME.get('border_color', '#ccc')};
       border-radius: {THEME.get('border_radius', '6px')};
-      background: #fff;
+      background: {THEME.get('widget_background_color', '#fff')};
       box-sizing: border-box;
+      overflow: hidden;
+    }}
 
-      appearance: none !important;
-      background-color: #ffffff !important;
+    .mljar-number-input {{
+      flex: 1 1 auto;
+      min-width: 0;
+      min-height: 100%;
+      padding: 7px 10px;
+      border: 0;
+      border-radius: 0;
+      background: {THEME.get('widget_background_color', '#fff')};
+      box-sizing: border-box;
+      background-color: {THEME.get('widget_background_color', '#fff')} !important;
       color: {THEME.get('text_color', '#222')} !important;
+      font: inherit;
+      line-height: 1.2;
+      -moz-appearance: textfield;
+    }}
+
+    .mljar-number-input::-webkit-outer-spin-button,
+    .mljar-number-input::-webkit-inner-spin-button {{
+      -webkit-appearance: none;
+      margin: 0;
     }}
 
     .mljar-number-input:disabled {{
       background: #f5f5f5;
       color: #888;
       cursor: not-allowed;
+    }}
+
+    .mljar-number-input:focus {{
+      outline: none;
+    }}
+
+    .mljar-number-field-row:focus-within {{
+      border-color: {THEME.get('focus_border_color', THEME.get('accent_color', '#4c7cf0'))};
+      box-shadow: none;
+    }}
+
+    .mljar-number-field-row:focus-within .mljar-number-controls {{
+      border-left-color: {THEME.get('focus_border_color', THEME.get('accent_color', '#4c7cf0'))};
+    }}
+
+    .mljar-number-controls {{
+      display: flex;
+      align-items: stretch;
+      flex: 0 0 auto;
+      border-left: 1px solid {THEME.get('border_color', '#ccc')};
+      background: {THEME.get('panel_bg_hover', '#f7f7f7')};
+    }}
+
+    .mljar-number-step-btn {{
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 38px;
+      min-width: 38px;
+      min-height: 100%;
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+      color: {THEME.get('text_color', '#222')};
+      font: inherit;
+      font-size: 18px;
+      font-weight: 700;
+      line-height: 1;
+      cursor: pointer;
+      padding: 0;
+      user-select: none;
+      -webkit-user-select: none;
+      touch-action: manipulation;
+      transition: background-color 0.14s ease, color 0.14s ease;
+    }}
+
+    .mljar-number-step-up {{
+      border-left: 1px solid {THEME.get('border_color', '#ccc')};
+    }}
+
+    .mljar-number-step-btn:hover {{
+      background: {THEME.get('hover_background_color', '#ececec')};
+    }}
+
+    .mljar-number-step-btn:active {{
+      background: {THEME.get('selected_background_color', '#e0e0e0')};
+      color: {THEME.get('accent_color', '#1f4fd1')};
+    }}
+
+    .mljar-number-step-btn:focus-visible {{
+      outline: none;
+      background: {THEME.get('selected_background_color', '#e0e0e0')};
+      color: {THEME.get('accent_color', '#1f4fd1')};
+    }}
+
+    .mljar-number-step-btn:disabled {{
+      background: #f5f5f5;
+      color: #aaa;
+      cursor: not-allowed;
+    }}
+
+    @media (max-width: 768px) {{
+      .mljar-number-field-row {{
+        min-height: 44px;
+      }}
+
+      .mljar-number-input {{
+        min-height: 44px;
+        padding: 8px 12px;
+      }}
+
+      .mljar-number-step-btn {{
+        font-size: 19px;
+        width: 44px;
+        min-width: 44px;
+      }}
     }}
     """
 

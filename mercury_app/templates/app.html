@@ -6,44 +6,117 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{page_title or 'Mercury'}}</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>{{ favicon_emoji or '🎉' }}</text></svg>">
+  {% set theme = page_config.get('theme', {}) %}
+  {{ page_config.get('themeFontLinks', '') | safe }}
 
   <style>
     /* Base reset / typography */
+    :root {
+      color-scheme: light;
+      {{ page_config.get('themeCssVars', '') | safe }}
+    }
     html, body {
       padding: 0;
       margin: 0;
-      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
-      color: #0f172a;
+      font-family: var(--mercury-font-family);
+      font-size: var(--mercury-font-size);
+      color: var(--mercury-text-color);
       line-height: 1.55;
-      background: #f9fafb;
+      background: var(--mercury-background-color);
     }
     a { color: inherit; text-decoration: none; }
     a:hover { text-decoration: underline; }
 
-    /* Header */
-    .hdr {
-      position: sticky; top: 0; z-index: 50;
-      background: #0b0b0c;
-      border-bottom: 1px solid rgba(255,255,255,0.08);
+    body #header {
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      min-height: 52px;
+      background: var(--mercury-topbar-background-color) !important;
+      border-bottom: 1px solid var(--mercury-topbar-border-color);
+      box-shadow: none;
     }
-    .hdr-inner {
+
+    body #header .header-bar {
+      display: none;
+    }
+
+    body #header #header-container.container {
+      width: min(100%, calc(56rem + 2rem));
       margin: 0 auto;
-      display: flex; align-items: center; justify-content: space-between;
-      padding: .6rem .75rem;
+      padding: .7rem 1rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      box-sizing: border-box;
+      float: none;
     }
-    .brand {
-      font-weight: 750; letter-spacing: -.01em;
-      color: #f3f4f6; font-size: clamp(14px, 2vw, 20px);
+
+    body #header #jupyter_server.navbar-brand {
+      float: none;
+      height: auto;
+      margin: 0;
+      padding: 0;
+      font-family: var(--mercury-heading-font-family);
+      font-size: clamp(16px, 2vw, 20px);
+      font-weight: 750;
+      letter-spacing: -.01em;
+      line-height: 1.2;
     }
-    .btn {
-      display: inline-flex; align-items: center; gap: .5rem;
-      border: 1px solid #e5e7eb;
-      background: #fff; color: #374151;
-      padding: .45rem .75rem; font-size: 13px; border-radius: .5rem;
-      transition: box-shadow .15s ease, transform .15s ease;
+
+    body #header #jupyter_server.navbar-brand a {
+      display: inline-flex;
+      align-items: center;
+      gap: .55rem;
+      color: var(--mercury-topbar-text-color) !important;
+      text-decoration: none;
     }
-    .btn:hover { text-decoration: none; box-shadow: 0 1px 8px rgba(0,0,0,.06); }
-    .caret { transition: transform .15s ease; }
+
+    body #header #jupyter_server.navbar-brand img {
+      height: 28px;
+      width: auto;
+      max-width: 100%;
+      object-fit: contain;
+    }
+
+    body #header,
+    body #header a,
+    body #header .nav,
+    body #header .navbar-brand,
+    body #header .navbar-text {
+      color: var(--mercury-topbar-text-color) !important;
+    }
+
+    body #header button,
+    body #header .btn,
+    body #header a.btn {
+      border: 1px solid var(--mercury-topbar-border-color) !important;
+      background: transparent !important;
+      color: var(--mercury-topbar-text-color) !important;
+      border-radius: .5rem;
+      box-shadow: none !important;
+      text-shadow: none !important;
+      transition: background-color .15s ease, border-color .15s ease, transform .15s ease;
+    }
+
+    body #header button:hover,
+    body #header .btn:hover,
+    body #header a.btn:hover {
+      background: color-mix(in srgb, var(--mercury-topbar-text-color) 10%, transparent) !important;
+      border-color: color-mix(in srgb, var(--mercury-topbar-text-color) 18%, var(--mercury-topbar-border-color)) !important;
+      text-decoration: none;
+    }
+
+    body #header button:focus,
+    body #header button:focus-visible,
+    body #header .btn:focus,
+    body #header .btn:focus-visible,
+    body #header a.btn:focus,
+    body #header a.btn:focus-visible {
+      outline: none;
+      border-color: var(--mercury-focus-border-color) !important;
+      box-shadow: none !important;
+    }
 
     /* ===== Persistent loader overlay (below header), mobile-friendly ===== */
     :root {
@@ -53,88 +126,208 @@
     }
 
     /* Background overlay BELOW the header + safe area */
-    html::before {
-      content: "";
+    .mercury-starting-loader {
       position: fixed;
       top: calc(var(--header-height) + var(--safe-top));
       left: 0;
       right: 0;
       bottom: 0;
       z-index: 2147483647;
-      background: rgba(249,250,251,0.85);
-      /* Prevent scroll behind on mobile */
+      background: color-mix(in srgb, var(--mercury-background-color) 88%, transparent);
       -webkit-overflow-scrolling: touch;
       touch-action: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1rem;
+      box-sizing: border-box;
     }
 
-    /* Coffee box centered BELOW the header */
-    html::after {
-      content: "Initializing web application…";
-      position: fixed;
-      top: calc(var(--header-height) + var(--safe-top) + 50%);
-      left: 50%;
-      transform: translate(-50%, -50%);
-      z-index: 2147483648;
+    .mercury-starting-loader.is-hidden {
+      display: none !important;
+    }
 
-      background: #ffffff;
-      border: 1px solid #e2e8f0;
+    .mercury-starting-loader-card {
+      background: var(--mercury-surface-color);
+      border: 1px solid var(--mercury-border-color);
       border-radius: 1rem;
-      padding: 5.1rem 2.25rem 2rem;
+      padding: 2rem 2.25rem;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 1rem;
       text-align: center;
       font-size: 18px;
       font-weight: 600;
       box-shadow: 0 1px 2px rgba(0,0,0,0.04);
-      color: #475569;
-
-      background-image:
-        url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='72' height='72' viewBox='0 0 72 72'><rect width='72' height='72' fill='none'/><path d='M18 26h30a0 0 0 0 1 0 0v12a10 10 0 0 1-10 10H28a10 10 0 0 1-10-10V26Z' fill='%23ffffff' stroke='%230f172a' stroke-width='2'/><path d='M48 28h6a6 6 0 0 1 0 12h-6' fill='none' stroke='%230f172a' stroke-width='2'/><path d='M20 22h26' stroke='%230f172a' stroke-width='2' stroke-linecap='round'/><rect x='16' y='46' width='32' height='4' rx='2' fill='%230f172a'/></svg>"),
-        url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='72' height='72' viewBox='0 0 72 72'><path d='M22 28c6-6 6-12 0-18c-6-6-6-12 0-18' fill='none' stroke='%2394a3b8' stroke-width='2' stroke-linecap='round'/><path d='M34 30c6-6 6-12 0-18c-6-6-6-12 0-18' fill='none' stroke='%2394a3b8' stroke-width='2' stroke-linecap='round'/><path d='M46 28c6-6 6-12 0-18c-6-6-6-12 0-18' fill='none' stroke='%2394a3b8' stroke-width='2' stroke-linecap='round'/></svg>");
-      background-repeat: no-repeat, no-repeat;
-      background-position: center 1.9rem, center 1.3rem;
-      background-size: 56px 56px, 48px 48px;
-      animation: mercury-steam-float 1.8s ease-in-out infinite;
-
-      /* Mobile-friendly sizing */
+      color: var(--mercury-text-color);
       width: min(92vw, 28rem);
       box-sizing: border-box;
       word-wrap: break-word;
       overflow-wrap: anywhere;
     }
 
+    .mercury-starting-loader-icon {
+      display: block;
+      flex: 0 0 auto;
+      margin: 0;
+    }
+
+    .mercury-starting-loader-message {
+      width: 100%;
+    }
+
+    .mercury-starting-loader-icon-coffee {
+      width: 56px;
+      height: 56px;
+      background-image:
+        url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='72' height='72' viewBox='0 0 72 72'><rect width='72' height='72' fill='none'/><path d='M18 26h30a0 0 0 0 1 0 0v12a10 10 0 0 1-10 10H28a10 10 0 0 1-10-10V26Z' fill='%23ffffff' stroke='%230f172a' stroke-width='2'/><path d='M48 28h6a6 6 0 0 1 0 12h-6' fill='none' stroke='%230f172a' stroke-width='2'/><path d='M20 22h26' stroke='%230f172a' stroke-width='2' stroke-linecap='round'/><rect x='16' y='46' width='32' height='4' rx='2' fill='%230f172a'/></svg>"),
+        url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='72' height='72' viewBox='0 0 72 72'><path d='M22 28c6-6 6-12 0-18c-6-6-6-12 0-18' fill='none' stroke='%2394a3b8' stroke-width='2' stroke-linecap='round'/><path d='M34 30c6-6 6-12 0-18c-6-6-6-12 0-18' fill='none' stroke='%2394a3b8' stroke-width='2' stroke-linecap='round'/><path d='M46 28c6-6 6-12 0-18c-6-6-6-12 0-18' fill='none' stroke='%2394a3b8' stroke-width='2' stroke-linecap='round'/></svg>");
+      background-repeat: no-repeat, no-repeat;
+      background-position: center center, center -6px;
+      background-size: 56px 56px, 48px 48px;
+      animation: mercury-starting-steam-float 1.8s ease-in-out infinite;
+    }
+
+    .mercury-starting-loader-icon-spinner {
+      width: 42px;
+      height: 42px;
+      border-radius: 50%;
+      border: 4px solid color-mix(in srgb, var(--mercury-primary-color) 20%, transparent);
+      border-top-color: var(--mercury-primary-color);
+      animation: mercury-starting-spinner 0.9s linear infinite;
+    }
+
     /* Small screens: tighten spacing and font size */
     @media (max-width: 480px) {
-      html::after {
-        padding: 4.6rem 1.25rem 1.5rem;
+      .mercury-starting-loader-card {
+        padding: 1.5rem 1.25rem;
         font-size: 16px;
         border-radius: .75rem;
         width: min(94vw, 24rem);
-        background-position: center 1.7rem, center 1.1rem;
+      }
+
+      .mercury-starting-loader-icon-coffee {
+        width: 48px;
+        height: 48px;
         background-size: 48px 48px, 40px 40px;
+      }
+
+      .mercury-starting-loader-icon-spinner {
+        width: 36px;
+        height: 36px;
       }
     }
 
-    @keyframes mercury-steam-float {
+    @keyframes mercury-starting-spinner {
+      from {
+        transform: rotate(0deg);
+      }
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    @keyframes mercury-starting-steam-float {
       0%, 100% {
-        background-position: center 1.9rem, center 1.3rem;
+        background-position: center center, center -6px;
         background-size: 56px 56px, 46px 46px;
       }
       50% {
-        background-position: center 1.9rem, center 1.3rem;
+        background-position: center center, center -6px;
         background-size: 56px 56px, 48px 50px;
       }
     }
 
-    /* Hide overlay when ready */
-    html.hide-loader::before,
-    html.hide-loader::after { display: none !important; }
-
     html.no-navbar {
       --header-height: 0px;
+    }
+
+    body .mercury-left-panel {
+      background: var(--mercury-sidebar-background-color) !important;
+      color: var(--mercury-sidebar-text-color) !important;
+      box-shadow: var(--mercury-sidebar-shadow) !important;
+    }
+
+    body .mercury-left-content,
+    body .mercury-left-header,
+    body .mercury-left-footer {
+      background: var(--mercury-sidebar-background-color) !important;
+      color: var(--mercury-sidebar-text-color) !important;
+    }
+
+    body .mercury-right-top-panel,
+    body .mercury-right-bottom-panel {
+      background: var(--mercury-content-background-color) !important;
+      color: var(--mercury-text-color) !important;
+    }
+
+    body .mercury-left-panel .mercury-sidebar-title {
+      color: var(--mercury-sidebar-title-color) !important;
+      font-family: var(--mercury-heading-font-family);
+    }
+
+    body .mercury-sidebar-toggle {
+      color: var(--mercury-text-color);
+      border: 1px solid transparent;
+    }
+
+    body .mercury-left-panel .mercury-sidebar-toggle {
+      color: var(--mercury-sidebar-text-color);
+    }
+
+    body .mercury-sidebar-toggle:hover {
+      background: var(--mercury-hover-background-color);
+    }
+
+    body .mercury-sidebar-toggle:focus,
+    body .mercury-sidebar-toggle:focus-visible,
+    body .mercury-sidebar-toggle:active {
+      color: var(--mercury-focus-border-color);
+      border-color: var(--mercury-focus-border-color);
+      box-shadow: none !important;
+    }
+
+    body .mercury-runall-btn {
+      background: var(--mercury-run-button-background) !important;
+      color: var(--mercury-run-button-text-color) !important;
+      box-shadow:
+        0 1px 0 rgba(255, 255, 255, 0.3) inset,
+        0 3px 6px rgba(22, 179, 100, 0.25);
+    }
+
+    body .mercury-runall-btn:hover {
+      background: var(--mercury-run-button-background-hover) !important;
+    }
+
+    body .mercury-runall-btn:focus-visible {
+      outline: 2px solid var(--mercury-run-button-focus-color) !important;
+      outline-offset: 2px;
+    }
+
+    body .mercury-toast {
+      background: var(--mercury-toast-background-color);
+      color: var(--mercury-toast-text-color);
+      box-shadow: var(--mercury-shadow-md);
+    }
+
+    body .mercury-toast-error {
+      border-left-color: var(--mercury-toast-error-border-color);
     }
   </style>
 </head>
 
 <body>
+
+  <div id="mercury-loader" class="mercury-starting-loader">
+    <div class="mercury-starting-loader-card">
+      {% if starting_icon != 'none' %}
+      <div class="mercury-starting-loader-icon mercury-starting-loader-icon-{{ starting_icon or 'spinner' }}" aria-hidden="true"></div>
+      {% endif %}
+      <div class="mercury-starting-loader-message">{{ loading_message or 'Initializing web application...' }}</div>
+    </div>
+  </div>
 
   {# Copy so we do not modify the page_config with updates. #}
   {% set page_config_full = page_config.copy() %}
@@ -143,7 +336,7 @@
   <script id="jupyter-config-data" type="application/json">
     {{ page_config_full | tojson }}
   </script>
-  <script src="{{page_config['fullStaticUrl'] | e}}/bundle.js" main="index"></script>
+  <script src="{{ static('bundle.js') }}" main="index"></script>
 
   <script type="text/javascript">
     /* Remove token from URL. */
@@ -157,7 +350,10 @@
 
     /* Expose a helper to hide the persistent loader when ready */
     window.hideMercuryLoader = function () {
-      document.documentElement.classList.add('hide-loader');
+      var loader = document.getElementById('mercury-loader');
+      if (loader) {
+        loader.classList.add('is-hidden');
+      }
     };
 
     /* Dynamically set --header-height to the real header height for perfect positioning */
@@ -171,7 +367,7 @@
           document.documentElement.style.setProperty('--header-height', '0px');
           return;
         }
-        var hdr = document.querySelector('.hdr');
+        var hdr = document.querySelector('.mrc-hdr, .hdr');
         if (!hdr) return;
         var h = hdr.offsetHeight || 52;
         document.documentElement.style.setProperty('--header-height', h + 'px');
@@ -189,28 +385,12 @@
 
   </script>
 
-  <header class="hdr" role="banner" id="mercuryInitHeader">
-    <div class="hdr-inner">
-      <a class="brand" href="{{ base_url or '/' }}">{{page_config['title'] or 'Mercury'}}</a>
-      <div style="position:relative">
-        <button id="nbBtn" type="button" class="btn" aria-haspopup="menu" aria-expanded="false">
-          Notebooks
-          <svg class="caret" id="nbCaret" width="16" height="16" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-            <path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 0 1 1.06.02L10 10.94l3.71-3.71a.75.75 0 0 1 1.08 1.04l-4.25 4.25a.75.75 0 0 1-1.06 0L5.21 8.27a.75.75 0 0 1 .02-1.06z" clip-rule="evenodd"/>
-          </svg>
-        </button>
-      </div>
-    </div>
-  </header>
   <script>
-    // Remove navbar if requested
     (function () {
       const params = new URLSearchParams(window.location.search);
       if (params.has('no-navbar')) {
         document.documentElement.classList.add('no-navbar');
         document.documentElement.style.setProperty('--header-height', '0px');
-        const header = document.getElementById('mercuryInitHeader');
-        if (header) header.remove();
       }
     })();
   

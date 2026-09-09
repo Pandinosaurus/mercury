@@ -103,24 +103,28 @@ def Select(
         value = choices[0]
         warnings.warn("\nYour value is not included in choices. Automatically set value to first element from choices.")
 
-    args = [value, label, choices, url_key, position]
+    args = [value, label, choices, url_key, position, disabled, hidden]
     kwargs = {
         "value": value,
         "label": label,
         "choices": choices,
         "url_key": url_key,
-        "position": position
+        "position": position,
+        "disabled": disabled,
+        "hidden": hidden,
     }
 
     code_uid = WidgetsManager.get_code_uid("Select", key=key, args=args, kwargs=kwargs)
     cached = WidgetsManager.get_widget(code_uid)
     if cached:
+        WidgetsManager.register_input(code_uid, cached, key=key, url_key=url_key)
         apply_widget_render_metadata(cached)
         display(cached)
         return cached
 
     instance = SelectWidget(**with_widget_render_metadata(kwargs))
     WidgetsManager.add_widget(code_uid, instance)
+    WidgetsManager.register_input(code_uid, instance, key=key, url_key=url_key)
     display(instance)
     return instance
 
@@ -174,13 +178,23 @@ class SelectWidget(anywidget.AnyWidget):
       dropdown.appendChild(emptyState);
 
       container.appendChild(control);
-      container.appendChild(dropdown);
       el.appendChild(container);
 
       let isOpen = false;
       let filteredChoices = [];
       let lastCommittedValue = "";
       let isEditing = false;
+      document.body.appendChild(dropdown);
+
+      const updateDropdownPosition = () => {
+        if (!isOpen) {
+          return;
+        }
+        const rect = control.getBoundingClientRect();
+        dropdown.style.top = `${rect.bottom + 6}px`;
+        dropdown.style.left = `${rect.left}px`;
+        dropdown.style.width = `${rect.width}px`;
+      };
 
       const setOpen = next => {
         if (isDisabled()) {
@@ -190,6 +204,9 @@ class SelectWidget(anywidget.AnyWidget):
         }
         container.classList.toggle("is-open", isOpen);
         dropdown.style.display = isOpen ? "block" : "none";
+        if (isOpen) {
+          updateDropdownPosition();
+        }
       };
 
       const updateDisabledState = () => {
@@ -261,9 +278,20 @@ class SelectWidget(anywidget.AnyWidget):
         setOpen(true);
       };
 
+      const closeDropdown = () => {
+        isEditing = false;
+        setOpen(false);
+        input.value = lastCommittedValue;
+      };
+
       control.addEventListener("click", event => {
         event.stopPropagation();
         if (isDisabled()) {
+          return;
+        }
+        if (event.target === caret && isOpen) {
+          closeDropdown();
+          input.blur();
           return;
         }
         openWithCurrentQuery();
@@ -291,14 +319,14 @@ class SelectWidget(anywidget.AnyWidget):
       });
 
       const handleDocumentClick = event => {
-        if (!container.contains(event.target)) {
-          isEditing = false;
-          setOpen(false);
-          input.value = lastCommittedValue;
+        if (!container.contains(event.target) && !dropdown.contains(event.target)) {
+          closeDropdown();
         }
       };
 
       document.addEventListener("click", handleDocumentClick);
+      window.addEventListener("resize", updateDropdownPosition);
+      document.addEventListener("scroll", updateDropdownPosition, true);
 
       model.on("change:value", () => {
         syncInputWithValue();
@@ -319,8 +347,7 @@ class SelectWidget(anywidget.AnyWidget):
       model.on("change:disabled", () => {
         updateDisabledState();
         if (isDisabled()) {
-          isEditing = false;
-          setOpen(false);
+          closeDropdown();
         }
       });
 
@@ -335,7 +362,10 @@ class SelectWidget(anywidget.AnyWidget):
       setOpen(false);
 
       return () => {
+        dropdown.remove();
         document.removeEventListener("click", handleDocumentClick);
+        window.removeEventListener("resize", updateDropdownPosition);
+        document.removeEventListener("scroll", updateDropdownPosition, true);
       };
     }
     export default { render };
@@ -344,17 +374,19 @@ class SelectWidget(anywidget.AnyWidget):
     # simplified CSS
     _css = f"""
     .mljar-select-container {{
+      position: relative;
       display: flex;
       flex-direction: column;
       font-family: {THEME.get('font_family', 'Arial, sans-serif')};
       font-size: {THEME.get('font_size', '14px')};
       color: {THEME.get('text_color', '#222')};
-      margin-bottom: 8px;
       padding-left: 4px;
       padding-right: 4px;
+      overflow: visible;
     }}
 
     .mljar-select-label {{
+      padding-top: 6px;
       margin-bottom: 4px;
       font-weight: 600;
     }}
@@ -364,6 +396,11 @@ class SelectWidget(anywidget.AnyWidget):
       display: flex;
       align-items: center;
       cursor: default;
+      overflow: visible;
+    }}
+
+    .mljar-select-container.is-open {{
+      z-index: 20;
     }}
 
     .mljar-select-widget-input {{
@@ -372,21 +409,21 @@ class SelectWidget(anywidget.AnyWidget):
       padding: 9px 36px 9px 10px;
       border: 1px solid {THEME.get('border_color', '#ccc')};
       border-radius: {THEME.get('border_radius', '6px')};
-      background: #fff;
+      background: {THEME.get('widget_background_color', '#fff')};
       box-sizing: border-box;
       line-height: 1.4;
       transition: border-color 0.15s ease, box-shadow 0.15s ease;
 
       appearance: none !important;
-      background-color: #ffffff !important;
+      background-color: {THEME.get('widget_background_color', '#fff')} !important;
       color: {THEME.get('text_color', '#222')} !important;
       cursor: default;
     }}
 
     .mljar-select-widget-input:focus {{
       outline: none;
-      border-color: {THEME.get('accent_color', '#4c7cf0')};
-      box-shadow: 0 0 0 3px rgba(76, 124, 240, 0.16);
+      border-color: {THEME.get('focus_border_color', THEME.get('accent_color', '#4c7cf0'))};
+      box-shadow: none;
       cursor: text;
     }}
 
@@ -399,7 +436,7 @@ class SelectWidget(anywidget.AnyWidget):
       border-right: 1.5px solid {THEME.get('text_color', '#222')};
       border-bottom: 1.5px solid {THEME.get('text_color', '#222')};
       transform: translateY(-65%) rotate(45deg);
-      pointer-events: none;
+      pointer-events: auto;
       opacity: 0.5;
       transition: transform 0.18s ease, opacity 0.18s ease;
     }}
@@ -411,10 +448,11 @@ class SelectWidget(anywidget.AnyWidget):
 
     .mljar-select-dropdown {{
       display: none;
-      margin-top: 6px;
+      position: fixed;
+      z-index: 10000;
       border: 1px solid {THEME.get('border_color', '#ccc')};
       border-radius: {THEME.get('border_radius', '6px')};
-      background: #fff;
+      background: {THEME.get('panel_bg', '#fff')};
       box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
       overflow: hidden;
     }}
@@ -434,22 +472,34 @@ class SelectWidget(anywidget.AnyWidget):
       text-align: left;
       cursor: pointer;
       font: inherit;
+      transition: background-color 0.14s ease, color 0.14s ease;
     }}
 
     .mljar-select-option:hover {{
-      background: #f5f7fb;
+      background: {THEME.get('hover_background_color', '#f5f7fb')};
+    }}
+
+    .mljar-select-option:active {{
+      background: {THEME.get('selected_background_color', '#eef3ff')};
+      color: {THEME.get('accent_color', '#1f4fd1')};
     }}
 
     .mljar-select-option.is-selected {{
-      background: #eef3ff;
-      color: #1f4fd1;
+      background: {THEME.get('selected_background_color', '#eef3ff')};
+      color: {THEME.get('accent_color', '#1f4fd1')};
       font-weight: 600;
+    }}
+
+    .mljar-select-option.is-selected:hover,
+    .mljar-select-option.is-selected:active {{
+      background: {THEME.get('selected_background_color', '#eef3ff')};
+      color: {THEME.get('accent_color', '#1f4fd1')};
     }}
 
     .mljar-select-empty {{
       display: none;
       padding: 10px;
-      color: #777;
+      color: {THEME.get('muted_text_color', '#777')};
       font-size: 0.95em;
     }}
 

@@ -22,6 +22,7 @@ def TextInput(
     position: Position = "sidebar",
     disabled: bool = False,
     hidden: bool = False,
+    rows: int = 1,
     key: str = "",
 ):
     """
@@ -47,6 +48,10 @@ def TextInput(
         If `True`, the widget is visible but cannot be interacted with.
     hidden : bool, optional
         If `True`, the widget exists in the UI state but is not rendered.
+    rows : int, optional
+        Number of visible text rows. When greater than `1`, the widget is
+        rendered as a resizable textarea instead of a single-line input.
+        The default is `1`.
     key : str, optional
         Unique identifier used to differentiate widgets with the same parameters.
 
@@ -57,23 +62,28 @@ def TextInput(
     """
     value = resolve_text_value(value=value, url_key=url_key)
 
-    args = [label, value, url_key, position]
+    args = [label, value, url_key, position, disabled, hidden, rows]
     kwargs = {
         "label": label,
         "value": value,
         "url_key": url_key,
-        "position": position
+        "position": position,
+        "disabled": disabled,
+        "hidden": hidden,
+        "rows": rows,
     }
 
     code_uid = WidgetsManager.get_code_uid("TextInput", key=key, args=args, kwargs=kwargs)
     cached = WidgetsManager.get_widget(code_uid)
     if cached:
+        WidgetsManager.register_input(code_uid, cached, key=key, url_key=url_key)
         apply_widget_render_metadata(cached)
         display(cached)
         return cached
 
     instance = TextInputWidget(**with_widget_render_metadata(kwargs))
     WidgetsManager.add_widget(code_uid, instance)
+    WidgetsManager.register_input(code_uid, instance, key=key, url_key=url_key)
     display(instance)
     return instance
 
@@ -87,8 +97,15 @@ class TextInputWidget(anywidget.AnyWidget):
       const topLabel = document.createElement("div");
       topLabel.classList.add("mljar-textinput-top-label");
 
-      const input = document.createElement("input");
-      input.type = "text";
+      const rows = model.get("rows") || 1;
+      const multiline = rows > 1;
+
+      const input = document.createElement(multiline ? "textarea" : "input");
+      if (multiline) {
+        input.rows = rows;
+      } else {
+        input.type = "text";
+      }
       input.classList.add("mljar-textinput-input");
 
       container.appendChild(topLabel);
@@ -119,6 +136,11 @@ class TextInputWidget(anywidget.AnyWidget):
       model.on("change:label", syncFromModel);
       model.on("change:disabled", syncFromModel);
       model.on("change:hidden", syncFromModel);
+      model.on("change:rows", () => {
+        if (input.tagName === "TEXTAREA") {
+          input.rows = model.get("rows") || 1;
+        }
+      });
 
       syncFromModel();
 
@@ -161,13 +183,13 @@ class TextInputWidget(anywidget.AnyWidget):
       font-size: {THEME.get('font_size', '14px')};
       font-weight: {THEME.get('font_weight', 'normal')};
       color: {THEME.get('text_color', '#222')};
-      margin-bottom: 8px;
       padding-left: 4px;
       padding-right: 4px;
       box-sizing: border-box;
     }}
 
     .mljar-textinput-top-label {{
+      padding-top: 6px;
       margin-bottom: 6px;
       text-align: left;
       width: 100%;
@@ -176,13 +198,14 @@ class TextInputWidget(anywidget.AnyWidget):
 
     .mljar-textinput-input {{
       width: 100%;
-      padding: 6px 10px;
-      min-height: 1.6em;
+      min-height: 40px;
+      padding: 9px 10px;
       box-sizing: border-box;
       border: {"1px solid " + THEME.get('border_color', '#ccc') if THEME.get('border_visible', True) else "none"};
       border-radius: {THEME.get('border_radius', '6px')};
       background: {THEME.get('widget_background_color', '#fff')};
       color: {THEME.get('text_color', '#222')};
+      line-height: 1.4;
 
       appearance: none !important;
       background-color: {THEME.get('widget_background_color', '#fff')} !important;
@@ -190,13 +213,27 @@ class TextInputWidget(anywidget.AnyWidget):
 
     .mljar-textinput-input:focus {{
       outline: none;
-      border-color: {THEME.get('primary_color', '#007bff')};
+      border-color: {THEME.get('focus_border_color', THEME.get('accent_color', '#4c7cf0'))};
+      box-shadow: none;
+    }}
+
+    textarea.mljar-textinput-input {{
+      font-family: inherit;
+      font-size: inherit;
+      resize: vertical;
     }}
 
     .mljar-textinput-input:disabled {{
       background: #f5f5f5;
       color: #888;
       cursor: not-allowed;
+    }}
+
+    @media (max-width: 768px) {{
+      .mljar-textinput-input {{
+        min-height: 44px;
+        padding: 10px 12px;
+      }}
     }}
     """
 
@@ -206,6 +243,17 @@ class TextInputWidget(anywidget.AnyWidget):
 
     disabled = traitlets.Bool(False).tag(sync=True)
     hidden = traitlets.Bool(False).tag(sync=True)
+
+    rows = traitlets.Int(
+        default_value=1,
+        help="Number of visible text rows; values above 1 render a textarea",
+    ).tag(sync=True)
+
+    @traitlets.validate("rows")
+    def _validate_rows(self, proposal):
+        if proposal["value"] < 1:
+            raise traitlets.TraitError("rows must be a positive integer")
+        return proposal["value"]
 
     position = traitlets.Enum(
         values=["sidebar", "inline", "bottom"],

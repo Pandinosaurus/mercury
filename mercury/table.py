@@ -9,6 +9,7 @@ from typing import Any, List, Dict
 import datetime
 from .manager import WidgetsManager, MERCURY_MIMETYPE
 from .render_context import apply_widget_render_metadata, with_widget_render_metadata
+from .theme import THEME
 
 
 _CSS_SIZE_UNITS = ("px", "%", "vh", "vw", "rem", "em")
@@ -332,6 +333,18 @@ class TableWidget(anywidget.AnyWidget):
 function render({ model, el }) {
   const c = (tag, props = {}) =>
     Object.assign(document.createElement(tag), props);
+  const syncEllipsisTitle = cell => {
+    const text = cell.textContent || '';
+    if (!text) {
+      cell.removeAttribute('title');
+      return;
+    }
+    if (cell.scrollWidth > cell.clientWidth) {
+      cell.title = text;
+    } else {
+      cell.removeAttribute('title');
+    }
+  };
 
   let data = model.get('data') || [];
   let page = model.get('table_page');
@@ -349,6 +362,11 @@ function render({ model, el }) {
 
   const container = c('div', { className: 'mljar-mercury-table-widget-table-container' });
   el.appendChild(container);
+
+  const wrap = c('div', { className: 'mljar-mercury-table-widget-table-wrapper' });
+  const table = c('table', { className: 'mljar-mercury-table-widget-tbl' });
+  container.appendChild(wrap);
+  wrap.appendChild(table);
 
   const controls = c('div', { className: 'mljar-mercury-table-widget-table-controls' });
   const controlsLeft = c('div', { className: 'mljar-mercury-table-widget-controls-left' });
@@ -429,8 +447,6 @@ function render({ model, el }) {
   }
 
   function renderTable() {
-    container.innerHTML = '';
-
     const hasData = data.length > 0;
     const hiddenCols = showIndexCol ? new Set() : new Set([MERCURY_INDEX_NAME]);
     const selectionEnabled = rowsSelectionEnabled();
@@ -444,8 +460,16 @@ function render({ model, el }) {
       cols = lastKnownColumns;
     }
     
-    const wrap = c('div', { className: 'mljar-mercury-table-widget-table-wrapper' });
-    const table = c('table', { className: 'mljar-mercury-table-widget-tbl' });
+    const existingOverlay = container.querySelector(
+      '.mljar-mercury-table-widget-no-data-overlay'
+    );
+    if (existingOverlay) {
+      existingOverlay.remove();
+    }
+
+    table.innerHTML = '';
+    table.classList.toggle('has-row-selection', selectionEnabled);
+
     const w = model.get('width');
     const h = model.get('height');
     if (w) {
@@ -463,7 +487,6 @@ function render({ model, el }) {
       const trh = thead.appendChild(c('tr'));
 
       if (selectionEnabled) {
-        table.classList.add('has-row-selection');
         trh.appendChild(c('th', { textContent: '' }));
       }
 
@@ -489,6 +512,7 @@ function render({ model, el }) {
         };
 
         trh.appendChild(th);
+        requestAnimationFrame(() => syncEllipsisTitle(th));
       });
     }
 
@@ -512,13 +536,12 @@ function render({ model, el }) {
         }
 
         cols.forEach(col => {
-          tr.appendChild(c('td', { textContent: row[col] }));
+          const td = c('td', { textContent: row[col] });
+          tr.appendChild(td);
+          requestAnimationFrame(() => syncEllipsisTitle(td));
         });
       });
     }
-
-    wrap.appendChild(table);
-    container.appendChild(wrap);
 
     if (!hasData) {
       const overlay = c('div', {
@@ -688,33 +711,6 @@ function render({ model, el }) {
   model.on('change:height', rerender);
   rerender();
 
-  // read cell id (used to sync widget with notebook cell)
-  const ID_ATTR = 'data-cell-id';
-  const hostWithId = el.closest(`[${ID_ATTR}]`);
-  const cellId = hostWithId ? hostWithId.getAttribute(ID_ATTR) : null;
-
-  if (cellId) {
-    model.set('cell_id', cellId);
-    model.save_changes();
-    model.send({ type: 'cell_id_detected', value: cellId });
-  } else {
-    // if the attribute appears later, watch DOM mutations
-    const mo = new MutationObserver(() => {
-      const host = el.closest(`[${ID_ATTR}]`);
-      const newId = host?.getAttribute(ID_ATTR);
-      if (newId) {
-        model.set('cell_id', newId);
-        model.save_changes();
-        model.send({ type: 'cell_id_detected', value: newId });
-        mo.disconnect();
-      }
-    });
-    mo.observe(document.body, {
-      attributes: true,
-      subtree: true,
-      attributeFilter: [ID_ATTR]
-    });
-  }
 }
 export default { render };
 """
@@ -726,8 +722,9 @@ export default { render };
   padding: 10px 0px 0px 0px;
   align-items: center;
   gap: 16px;
-  font-family: sans-serif;
-  font-size: 13px;
+  font-family: %(font_family)s;
+  font-size: %(font_size)s;
+  color: %(text_color)s;
 }
 
 .mljar-mercury-table-widget-controls-left,
@@ -739,10 +736,20 @@ export default { render };
 
 .mljar-mercury-table-widget-mljar-mercury-table-widget-pager-btn {
   padding: 4px 10px;
-  border-radius: 4px;
-  border: 1px solid #ccc;
-  background: #f8f8f8;
+  border-radius: %(border_radius_sm)s;
+  border: 1px solid %(border_color)s;
+  background: %(widget_background_color)s;
+  color: %(text_color)s;
   cursor: pointer;
+  transition:
+    background-color 0.16s ease,
+    border-color 0.16s ease,
+    color 0.16s ease;
+}
+
+.mljar-mercury-table-widget-mljar-mercury-table-widget-pager-btn:hover:not(:disabled) {
+  background: %(hover_background_color)s;
+  border-color: %(focus_border_color)s;
 }
 
 .mljar-mercury-table-widget-mljar-mercury-table-widget-pager-btn:disabled {
@@ -760,30 +767,83 @@ export default { render };
   overflow-x: auto;
   display: block;
   box-sizing: border-box;
+  background: %(widget_background_color)s;
+  scrollbar-width: thin;
+  scrollbar-color: %(muted_text_color)s %(panel_bg_hover)s;
+}
+
+.mljar-mercury-table-widget-table-wrapper::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+
+.mljar-mercury-table-widget-table-wrapper::-webkit-scrollbar-track {
+  background: %(panel_bg_hover)s;
+  border-radius: 8px;
+}
+
+.mljar-mercury-table-widget-table-wrapper::-webkit-scrollbar-thumb {
+  background: %(muted_text_color)s;
+  border-radius: 8px;
+  border: 2px solid %(panel_bg_hover)s;
+}
+
+.mljar-mercury-table-widget-table-wrapper::-webkit-scrollbar-thumb:hover {
+  background: %(accent_color)s;
 }
 
 .mljar-mercury-table-widget-tbl {
   border-collapse: collapse;
-  table-layout: fixed;
-  font-family: sans-serif;
-  width: 100%;
+  table-layout: auto;
+  font-family: %(font_family)s;
+  font-size: %(font_size)s;
+  color: %(text_color)s;
+  background: %(widget_background_color)s;
+  width: max-content;
+  min-width: 100%%;
 }
 
 .mljar-mercury-table-widget-tbl th,
 .mljar-mercury-table-widget-tbl td {
-  border: 1px solid #ccc;
+  border: 1px solid %(border_color)s;
   padding: 8px;
   text-align: left;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   min-width: 160px;
+  max-width: 200px;
 }
 
 .mljar-mercury-table-widget-tbl th {
-  background: #f2f2f2;
+  background: %(panel_bg_hover)s;
+  color: %(text_color)s;
   cursor: pointer;
   text-align: center;
+  font-family: %(heading_font_family)s;
+  font-weight: 700;
+  transition: background-color 0.16s ease, color 0.16s ease;
+}
+
+.mljar-mercury-table-widget-tbl th:hover {
+  background: %(hover_background_color)s;
+}
+
+.mljar-mercury-table-widget-tbl th:active {
+  background: %(selected_background_color)s;
+  color: %(accent_color)s;
+}
+
+.mljar-mercury-table-widget-tbl tbody tr:nth-child(even) td {
+  background: %(panel_bg)s;
+}
+
+.mljar-mercury-table-widget-tbl tbody tr:nth-child(odd) td {
+  background: %(widget_background_color)s;
+}
+
+.mljar-mercury-table-widget-tbl tbody tr:hover td {
+  background: %(hover_background_color)s;
 }
 
 .mljar-mercury-table-widget-pager {
@@ -797,6 +857,12 @@ export default { render };
   width: 56px;
   text-align: center;
   padding: 4px 6px;
+  font-family: %(font_family)s;
+  font-size: %(font_size)s;
+  color: %(text_color)s;
+  background: %(widget_background_color)s;
+  border: 1px solid %(border_color)s;
+  border-radius: %(border_radius_sm)s;
   -moz-appearance: textfield;
 }
 .mljar-mercury-table-widget-page-input::-webkit-outer-spin-button,
@@ -808,7 +874,23 @@ export default { render };
 .mljar-mercury-table-widget-search-box {
   padding: 6px 8px;
   width: 200px;
-  font-size: 13px;
+  font-family: %(font_family)s;
+  font-size: %(font_size)s;
+  color: %(text_color)s;
+  background: %(widget_background_color)s;
+  border: 1px solid %(border_color)s;
+  border-radius: %(border_radius)s;
+}
+
+.mljar-mercury-table-widget-search-box::placeholder {
+  color: %(muted_text_color)s;
+}
+
+.mljar-mercury-table-widget-page-input:focus,
+.mljar-mercury-table-widget-search-box:focus {
+  outline: none;
+  border-color: %(focus_border_color)s;
+  box-shadow: none;
 }
 
 .mljar-mercury-table-widget-table-container {
@@ -824,29 +906,29 @@ export default { render };
 .mljar-mercury-table-widget-table-container.loading::after {
   content: '';
   position: absolute;
-  top: 50%;
-  left: 50%;
+  top: 50%%;
+  left: 50%%;
   width: 40px;
   height: 40px;
-  border-radius: 50%;
-  border: 4px solid rgba(0, 0, 0, 0.1);
-  border-top-color: #333;
-  transform: translate(-50%, -50%);
+  border-radius: 50%%;
+  border: 4px solid %(border_color)s;
+  border-top-color: %(accent_color)s;
+  transform: translate(-50%%, -50%%);
   animation: spin 0.8s linear infinite;
   z-index: 10;
 }
 
 @keyframes spin {
   from {
-    transform: translate(-50%, -50%) rotate(0deg);
+    transform: translate(-50%%, -50%%) rotate(0deg);
   }
   to {
-    transform: translate(-50%, -50%) rotate(360deg);
+    transform: translate(-50%%, -50%%) rotate(360deg);
   }
 }
 
 .mljar-mercury-table-widget-row-selected {
-  background-color: #e0f2fe;
+  background-color: %(selected_background_color)s;
 }
 
 .mljar-mercury-table-widget-tbl.has-row-selection td:first-child,
@@ -872,14 +954,30 @@ export default { render };
   display: flex;
   align-items: center;
   justify-content: center;
-  font-family: sans-serif;
+  font-family: %(font_family)s;
   font-size: 20px;
   font-weight: bold;
-  color: #666;
-  background: white;
+  color: %(muted_text_color)s;
+  background: %(widget_background_color)s;
   pointer-events: none;
 }
-"""
+""" % {
+        "font_family": THEME.get("font_family"),
+        "heading_font_family": THEME.get("heading_font_family", THEME.get("font_family")),
+        "font_size": THEME.get("font_size"),
+        "text_color": THEME.get("text_color"),
+        "muted_text_color": THEME.get("muted_text_color"),
+        "border_color": THEME.get("border_color"),
+        "border_radius": THEME.get("border_radius", "6px"),
+        "border_radius_sm": THEME.get("border_radius_sm", "4px"),
+        "widget_background_color": THEME.get("widget_background_color"),
+        "panel_bg": THEME.get("panel_bg"),
+        "panel_bg_hover": THEME.get("panel_bg_hover", THEME.get("panel_bg")),
+        "hover_background_color": THEME.get("hover_background_color"),
+        "selected_background_color": THEME.get("selected_background_color"),
+        "focus_border_color": THEME.get("focus_border_color", THEME.get("accent_color")),
+        "accent_color": THEME.get("accent_color", THEME.get("primary_color")),
+    }
 
     # --- backend flags / storage ---
 

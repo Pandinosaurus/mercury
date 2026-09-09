@@ -4,11 +4,14 @@
 import ipywidgets as widgets
 from IPython.display import display, clear_output
 from threading import Timer
+from uuid import uuid4
 
 import anywidget
 import traitlets
 
 from .message import Message, MSG_CSS_CLASS
+from ..render_context import get_render_context
+from ..theme import THEME
 
 
 class ScrollHelper(anywidget.AnyWidget):
@@ -23,6 +26,8 @@ class ScrollHelper(anywidget.AnyWidget):
 function render({ model, el }) {
   const LOG_PREFIX = "[ScrollHelper]";
   const MSG_CLASS = model.get("msg_css_class") || "mljar-chat-msg";
+  const CHAT_CLASS = model.get("chat_css_class");
+  const OWNS_SCROLL = model.get("owns_scroll") === true;
 
   // Just in case, hide the helper element itself
   el.classList.add("mljar-chat-scroll-helper");
@@ -37,22 +42,6 @@ function render({ model, el }) {
       canScroll &&
       (oy === "auto" || oy === "scroll" || o === "auto" || o === "scroll")
     );
-  }
-
-  function findScrollableWithin(rootEl) {
-    if (!rootEl) return null;
-    if (isScrollable(rootEl)) return rootEl;
-
-    const walker = document.createTreeWalker(
-      rootEl,
-      NodeFilter.SHOW_ELEMENT,
-      null
-    );
-    let n = walker.currentNode;
-    while ((n = walker.nextNode())) {
-      if (isScrollable(n)) return n;
-    }
-    return null;
   }
 
   function getScrollableAncestor(node) {
@@ -79,6 +68,13 @@ function render({ model, el }) {
     container.scrollTop = target;
   }
 
+  function isNearBottom(container) {
+    if (!container) return true;
+    return (
+      container.scrollHeight - container.scrollTop - container.clientHeight < 40
+    );
+  }
+
   function scrollPageFallback(elem) {
     try {
       elem.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -88,7 +84,13 @@ function render({ model, el }) {
   }
 
   function autoScroll() {
-    const msgs = document.getElementsByClassName(MSG_CLASS);
+    const roots = CHAT_CLASS
+      ? document.getElementsByClassName(CHAT_CLASS)
+      : null;
+    const root = roots && roots.length ? roots[0] : null;
+    if (!root) return;
+
+    const msgs = root.getElementsByClassName(MSG_CLASS);
     if (!msgs || !msgs.length) return;
     const last = msgs[msgs.length - 1];
 
@@ -103,9 +105,18 @@ function render({ model, el }) {
       console.warn(LOG_PREFIX, "bad selector", selector, e);
     }
 
-    const scroller =
-      findScrollableWithin(pref) ||
-      getScrollableAncestor(last) ||
+    // A fixed-height Chat owns scrolling even before its content overflows.
+    // This prevents several chats from competing for a shared page scroller.
+    if (OWNS_SCROLL) {
+      if (pinnedToBottom) root.scrollTop = root.scrollHeight;
+      return;
+    }
+
+    // Natural-height chats scroll their nearest surrounding container.
+    const preferredScroller =
+      pref && pref.contains(root) && isScrollable(pref) ? pref : null;
+    const scroller = getScrollableAncestor(root) ||
+      preferredScroller ||
       document.scrollingElement ||
       document.documentElement;
 
@@ -116,11 +127,29 @@ function render({ model, el }) {
     }
   }
 
+  let frameId = null;
+  let timerId = null;
+  let pinnedToBottom = true;
+
+  function trackScrollPosition() {
+    pinnedToBottom = isNearBottom(root);
+  }
+
   function scheduleScroll() {
     // Give big outputs (plots, images) a moment to layout
-    requestAnimationFrame(() => {
-      setTimeout(autoScroll, 100);
+    if (frameId !== null) cancelAnimationFrame(frameId);
+    if (timerId !== null) clearTimeout(timerId);
+    frameId = requestAnimationFrame(() => {
+      frameId = null;
+      timerId = setTimeout(() => {
+        timerId = null;
+        autoScroll();
+      }, 100);
     });
+  }
+
+  if (OWNS_SCROLL) {
+    root.addEventListener("scroll", trackScrollPosition, { passive: true });
   }
 
   // initial scroll attempt (in case messages already present)
@@ -128,18 +157,46 @@ function render({ model, el }) {
 
   // each time Python bumps `tick`, schedule scroll
   model.on("change:tick", scheduleScroll);
+
+  return () => {
+    if (frameId !== null) cancelAnimationFrame(frameId);
+    if (timerId !== null) clearTimeout(timerId);
+    model.off("change:tick", scheduleScroll);
+    if (OWNS_SCROLL) root.removeEventListener("scroll", trackScrollPosition);
+  };
 }
 export default { render };
     """
 
-    _css = """
-    .mljar-chat-scroll-helper {
+    _css = f"""
+    .mljar-chat-scroll-helper {{
         display: none;
-    }
+    }}
 
-    .mljar-chat-container {
-        background-color: #fff;
-    }
+    .mljar-chat-container {{
+        background: transparent;
+        box-sizing: border-box;
+    }}
+
+    .mljar-chat-container > .widget-box,
+    .mljar-chat-container > .jupyter-widgets,
+    .mljar-chat-container .widget-box,
+    .mljar-chat-container .jupyter-widgets {{
+        box-sizing: border-box;
+    }}
+
+    .mljar-chat-placeholder {{
+        color: {THEME.get('muted_text_color', '#777')};
+        text-align: center;
+        padding: 32px 0;
+        font-family: {THEME.get('font_family', 'Arial, sans-serif')};
+        font-size: {THEME.get('font_size', '14px')};
+        font-weight: {THEME.get('font_weight', 'normal')};
+        line-height: 1.6;
+        background: transparent;
+        border: {('1px dashed ' + THEME.get('border_color', '#ccc')) if THEME.get('border_visible', True) else 'none'};
+        border-radius: {THEME.get('border_radius', '6px')};
+    }}
     """
 
     tick = traitlets.Int(0).tag(sync=True)
@@ -147,6 +204,8 @@ export default { render };
         "#mercury-main-panel, .mercury-main-panel"
     ).tag(sync=True)
     msg_css_class = traitlets.Unicode("mljar-chat-msg").tag(sync=True)
+    chat_css_class = traitlets.Unicode("").tag(sync=True)
+    owns_scroll = traitlets.Bool(False).tag(sync=True)
 
 
 class Chat:
@@ -216,17 +275,12 @@ class Chat:
         self.height = str(height or "").strip()
         self.scroll_debounce = max(float(scroll_debounce), 0.0)
         self._scroll_timer = None
+        self._chat_css_class = f"mljar-chat-{uuid4().hex}"
 
         # Placeholder label (same as before)
         self.placeholder_label = widgets.HTML(
             f"""
-            <div style="
-              color:#b5b5b5;
-              text-align:center;
-              padding:40px 0;
-              font-size:1.1em;
-              background:#fff;
-            ">{placeholder}</div>
+            <div class="mljar-chat-placeholder">{placeholder}</div>
             """
         )
 
@@ -236,19 +290,23 @@ class Chat:
             layout=widgets.Layout(
                 width="100%",
                 height=self.height or None,
-                padding="4px",
-                overflow="auto" if self.height else "visible",
+                padding="4px 4px 0 4px",
+                overflow="hidden auto" if self.height else "visible",
             ),
         )
         self.vbox.add_class("mljar-chat-container")
+        self.vbox.add_class(self._chat_css_class)
 
         # Hidden helper widget that runs JS (via anywidget) for scrolling
         self._scroller = ScrollHelper(
             scroll_container_selector=self.scroll_container_selector,
             msg_css_class=MSG_CSS_CLASS,
+            chat_css_class=self._chat_css_class,
+            owns_scroll=bool(self.height),
         )
 
-        clear_output(wait=True)
+        if get_render_context().render_slot_id is None:
+            clear_output(wait=True)
         # Display both the visible chat and the hidden scroller
         display(self.vbox, self._scroller)
 

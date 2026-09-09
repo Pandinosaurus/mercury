@@ -11,18 +11,40 @@ from jupyterlab_server import LabServerApp
 from tornado.routing import PathMatches, Rule
 from traitlets import Bool, Integer
 
+from mercury.config import build_theme_css_vars, build_theme_font_links
+
 from ._version import __version__
 from .block_handler import BLOCKED_PATTERNS, BlockedHandler
 from .custom_contents_handler import MercuryContentsHandler
-from .handlers import MAIN_CONFIG, MercuryHandler
+from .execution import (
+    ExecutionRegistry,
+    MercuryKernelWebsocketConnection,
+    SharedSessionCoordinator,
+)
+from .execution.handlers import (
+    MercuryCheckpointsHandler,
+    MercuryKernelActionHandler,
+    MercuryKernelHandler,
+    MercuryMainKernelHandler,
+    MercurySessionHandler,
+    MercurySessionRootHandler,
+)
+from .execution.sync_handler import SharedSessionWebsocket
+from .handlers import (
+    MAIN_CONFIG,
+    THEME,
+    MercuryHandler,
+    MercuryLogoutHandler,
+    _normalize_starting_icon,
+)
 from .idle_timeout import (
     TimeoutActivityTransform,
     TimeoutManager,
-    patch_kernel_websocket_handler,
 )
 from .mercury_hybrid_cm import HybridContentsManager
 from .notebooks import NotebooksAPIHandler
 from .root import RootIndexHandler
+from .security_mode import detect_standalone_security_mode
 from .theme_handler import ThemeHandler
 
 
@@ -39,6 +61,13 @@ for logger_name in ["tornado.application", "ServerApp"]:
 HERE = os.path.dirname(__file__)
 app_dir = get_app_dir()
 version = __version__
+
+
+def get_effective_notebooks_dir(serverapp) -> str:
+    root_dir = getattr(serverapp, "root_dir", None)
+    if root_dir:
+        return os.path.abspath(root_dir)
+    return os.getcwd()
 
 
 def is_mercury_app(argv0: str | None = None) -> bool:
@@ -90,6 +119,7 @@ class MercuryApp(LabServerApp):
         self.handlers.append((r"/", RootIndexHandler))
         self.handlers.append(("/mercury/api/notebooks", NotebooksAPIHandler))
         self.handlers.append(("/mercury/api/theme", ThemeHandler))
+        self.handlers.append(("/mercury/logout", MercuryLogoutHandler))
         self.handlers.append((f"/mercury{path_regex}", MercuryHandler))
         if sys.argv[0].endswith("mercury_app/__main__.py") or \
            sys.argv[0].endswith("mercury"):
@@ -107,7 +137,36 @@ class MercuryApp(LabServerApp):
             for pat in BLOCKED_PATTERNS:
                 full_pat = (base_url + pat) if base_url else pat
                 block_rules.append(Rule(PathMatches(full_pat), BlockedHandler))
-            app.default_router.rules = block_rules + app.default_router.rules
+            security_handlers = [
+                (
+                    r"/mercury/api/shared-sessions/(?P<session_id>\w+-\w+-\w+-\w+-\w+)",
+                    SharedSessionWebsocket,
+                ),
+                (
+                    r"/api/contents/(.*\.ipynb)/checkpoints",
+                    MercuryCheckpointsHandler,
+                ),
+                (r"/api/contents/(.*\.ipynb)", MercuryContentsHandler),
+                (
+                    r"/api/sessions/(?P<session_id>\w+-\w+-\w+-\w+-\w+)",
+                    MercurySessionHandler,
+                ),
+                (r"/api/sessions", MercurySessionRootHandler),
+                (
+                    r"/api/kernels/(?P<kernel_id>\w+-\w+-\w+-\w+-\w+)/(?P<action>restart|interrupt)",
+                    MercuryKernelActionHandler,
+                ),
+                (
+                    r"/api/kernels/(?P<kernel_id>\w+-\w+-\w+-\w+-\w+)",
+                    MercuryKernelHandler,
+                ),
+                (r"/api/kernels", MercuryMainKernelHandler),
+            ]
+            security_rules = []
+            for pattern, handler in security_handlers:
+                full_pattern = (base_url + pattern) if base_url else pattern
+                security_rules.append(Rule(PathMatches(full_pattern), handler))
+            app.default_router.rules = security_rules + block_rules + app.default_router.rules
 
     def initialize_templates(self):
         super().initialize_templates()
@@ -124,7 +183,28 @@ class MercuryApp(LabServerApp):
         if is_mercury_app():
             sa = getattr(self, "serverapp", None)
             if not sa:
-                return
+                raise RuntimeError("Mercury execution firewall requires ServerApp")
+
+            if getattr(sa, "disable_check_xsrf", False):
+                raise RuntimeError(
+                    "Mercury standalone mode requires XSRF protection; "
+                    "remove --ServerApp.disable_check_xsrf=True"
+                )
+
+            registry = ExecutionRegistry()
+            shared_session_coordinator = SharedSessionCoordinator()
+            security_mode = detect_standalone_security_mode(sa)
+            for settings in (self.settings, sa.web_app.settings):
+                settings["mercury_execution_registry"] = registry
+                settings["mercury_shared_session_coordinator"] = (
+                    shared_session_coordinator
+                )
+                settings["mercury_security_mode"] = security_mode.value
+                settings["kernel_websocket_connection_class"] = (
+                    MercuryKernelWebsocketConnection
+                )
+            self.log.warning("Mercury security mode: %s", security_mode.value)
+
             cm = getattr(sa, "contents_manager", None)
             if not cm or getattr(cm, "_mercury_wrapped", False):
                 return
@@ -133,7 +213,7 @@ class MercuryApp(LabServerApp):
             sa.contents_manager = wrapped
             self.settings["contents_manager"] = wrapped
 
-            self.settings.setdefault("notebooks_dir", os.getcwd())
+            self.settings["notebooks_dir"] = get_effective_notebooks_dir(sa)
 
             from jinja2 import ChoiceLoader, FileSystemLoader
             templates_dir = os.path.join(HERE, "templates")
@@ -152,6 +232,16 @@ class MercuryApp(LabServerApp):
             if env:
                 env.globals.setdefault("page_title", MAIN_CONFIG.get("title", "Mercury"))
                 env.globals.setdefault("favicon_emoji", MAIN_CONFIG.get("favicon_emoji", "🎉"))
+                env.globals.setdefault("theme_css_vars", build_theme_css_vars(THEME))
+                env.globals.setdefault("theme_font_links", build_theme_font_links(THEME))
+                env.globals.setdefault(
+                    "starting_icon",
+                    _normalize_starting_icon(MAIN_CONFIG.get("starting_icon")),
+                )
+                env.globals.setdefault(
+                    "starting_message",
+                    MAIN_CONFIG.get("starting_message", "Initializing web application..."),
+                )
             
 
     def initialize(self, argv=None):
@@ -161,7 +251,6 @@ class MercuryApp(LabServerApp):
             self._timeout_manager = TimeoutManager(self.timeout, self.serverapp)
             self.serverapp.web_app._timeout_manager = self._timeout_manager
             self.serverapp.web_app.add_transform(TimeoutActivityTransform)
-            patch_kernel_websocket_handler()
 
         
 main = launch_new_instance = MercuryApp.launch_instance

@@ -14,8 +14,14 @@ export type MercuryNavbarOptions = {
   baseUrl: string;
   /** Title from PageConfig.getOption('title') */
   title: string;
+   /** Label for the notebooks dropdown button */
+  notebooksButtonLabel?: string;
   /** URL that returns the notebooks JSON array */
   apiUrl: string;
+  /** Whether Mercury was started with token or password protection */
+  logoutAvailable?: boolean;
+  /** URL that clears the login cookie */
+  logoutUrl?: string;
   /** Callback fired when the header height is known/changes (e.g., mount) */
   onHeightChange?: (px: number) => void;
   /** Where to insert the header; defaults to document.body */
@@ -43,6 +49,7 @@ export class MercuryNavbar {
     this.injectStyles();
     this.buildHeader();
     this.opts.attachTo!.insertBefore(this.header!, this.opts.attachTo!.firstChild);
+    document.body.classList.add('mercury-has-header');
 
     // Notify consumer about height so they can add padding to content below
     const height = this.header!.getBoundingClientRect().height || 52;
@@ -54,6 +61,7 @@ export class MercuryNavbar {
 
   destroy(): void {
     this.unbindGlobalHandlers();
+    document.body.classList.remove('mercury-has-header');
     this.header?.remove();
     this.styleEl?.remove();
   }
@@ -64,63 +72,89 @@ export class MercuryNavbar {
     const style = document.createElement('style');
     style.id = 'mrc-header-style';
     style.textContent = `
-        :root { color-scheme: light dark; }
+        :root { color-scheme: light; }
         .mrc-hidden { display: none; }
   
         /* Header */
         .mrc-hdr {
           position: fixed; top: 0; left: 0; right: 0; z-index: 10000;
-          background: #0b0b0c;
-          border-bottom: 1px solid rgba(255,255,255,0.08);
+          background: var(--mercury-topbar-background-color);
+          border-bottom: 1px solid var(--mercury-topbar-border-color);
+          box-shadow: none;
         }
         .mrc-hdr-inner {
-          margin: 0 auto;
+          width: 100%;
+          margin: 0;
           display: flex; align-items: center; justify-content: space-between;
-          padding: .6rem .75rem;
+          box-sizing: border-box;
+          padding: .7rem 1rem;
+        }
+        .mrc-brand-wrap {
+          display: flex; align-items: center; gap: .6rem;
+          min-width: 0;
         }
         .mrc-brand {
           font-weight: 750; letter-spacing: -.01em;
-          color: #f3f4f6; font-size: clamp(14px, 2vw, 20px);
+          color: var(--mercury-topbar-text-color);
+          font-size: clamp(16px, 2vw, 20px);
           text-decoration: none;
-          font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+          font-family: var(--mercury-heading-font-family);
         }
         .mrc-brand:hover { text-decoration: underline; }
+        .mrc-actions {
+          display: flex; align-items: center; gap: .5rem;
+          min-width: 0;
+        }
+        .mrc-notebooks-wrap { position: relative; }
   
         /* Button */
         .mrc-btn {
           display: inline-flex; align-items: center; gap: .5rem;
-          border: 1px solid #e5e7eb;
-          background: #fff; color: #374151;
+          border: 1px solid var(--mercury-topbar-border-color);
+          background: transparent;
+          color: var(--mercury-topbar-text-color);
           padding: .45rem .75rem; font-size: 13px; border-radius: .5rem;
-          transition: box-shadow .15s ease, transform .15s ease;
+          transition: background-color .15s ease, border-color .15s ease, transform .15s ease;
           cursor: pointer;
+          box-shadow: none;
+          text-shadow: none;
         }
         .mrc-btn[disabled] { opacity: .7; cursor: progress; }
-        .mrc-btn:hover { text-decoration: none; box-shadow: 0 1px 8px rgba(0,0,0,.06); }
+        .mrc-btn:hover {
+          text-decoration: none;
+          background: color-mix(in srgb, var(--mercury-topbar-text-color) 10%, transparent);
+          border-color: color-mix(in srgb, var(--mercury-topbar-text-color) 18%, var(--mercury-topbar-border-color));
+        }
+        .mrc-btn:focus,
+        .mrc-btn:focus-visible {
+          outline: none;
+          border-color: var(--mercury-focus-border-color);
+          box-shadow: none;
+        }
         .mrc-caret { transition: transform .15s ease; }
   
         /* Menu (dropdown) */
         .mrc-menu{
           position:absolute; right:0; margin-top:.5rem; width:22rem; max-height:28rem; overflow:auto;
-          border:1px solid rgba(0,0,0,.08); border-radius:1rem;
-          background:rgba(255,255,255,.95); backdrop-filter:blur(8px);
-          box-shadow:0 10px 30px rgba(0,0,0,.08);
+          border:1px solid var(--mercury-border-color); border-radius:1rem;
+          background: var(--mercury-card-background-color);
+          box-shadow: var(--mercury-shadow-lg);
         }
         .mrc-menu-list{ padding:.4rem; }
         .mrc-menu-item{
           display:flex; align-items:center; gap:.7rem;
           padding:.6rem .65rem; border-radius:.75rem;
-          color:#111827; font-size:14px;
+          color:var(--mercury-text-color); font-size:14px;
           text-decoration:none;
           transition: background-color .12s ease, transform .12s ease;
-          font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+          font-family: var(--mercury-font-family);
         }
-        .mrc-menu-item:hover{ background:#f8fafc; text-decoration:none; }
+        .mrc-menu-item:hover{ background:var(--mercury-hover-background-color); text-decoration:none; }
         .mrc-menu-item:active{ transform: translateY(0.5px); }
         .mrc-menu-thumb{
           width:36px; height:28px; border-radius:.6rem;
           display:grid; place-items:center; font-weight:700; line-height:1;
-          box-shadow: inset 0 0 0 1px rgba(0,0,0,.03);
+          box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--mercury-border-color) 60%, transparent);
         }
       `;
     document.head.appendChild(style);
@@ -135,15 +169,22 @@ export class MercuryNavbar {
     const inner = document.createElement('div');
     inner.className = 'mrc-hdr-inner';
 
+    const brandWrap = document.createElement('div');
+    brandWrap.className = 'mrc-brand-wrap';
+
     // Brand
     const brand = document.createElement('a');
     brand.className = 'mrc-brand';
     brand.href = this.opts.baseUrl || '/';
     brand.textContent = this.opts.title || 'Mercury';
+    brandWrap.appendChild(brand);
 
     // Right side
     const rightWrap = document.createElement('div');
-    rightWrap.style.position = 'relative';
+    rightWrap.className = 'mrc-actions';
+
+    const notebooksWrap = document.createElement('div');
+    notebooksWrap.className = 'mrc-notebooks-wrap';
 
     const btn = document.createElement('button');
     btn.type = 'button';
@@ -151,7 +192,7 @@ export class MercuryNavbar {
     btn.id = 'mrcNbBtn';
     btn.setAttribute('aria-haspopup', 'menu');
     btn.setAttribute('aria-expanded', 'false');
-    btn.textContent = 'Notebooks';
+    btn.textContent = this.opts.notebooksButtonLabel || 'Notebooks';
 
     const caret = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     caret.setAttribute('class', 'mrc-caret');
@@ -175,10 +216,25 @@ export class MercuryNavbar {
     menuList.setAttribute('role', 'none');
 
     menu.appendChild(menuList);
-    rightWrap.appendChild(btn);
-    rightWrap.appendChild(menu);
+    notebooksWrap.appendChild(btn);
+    notebooksWrap.appendChild(menu);
+    rightWrap.appendChild(notebooksWrap);
 
-    inner.appendChild(brand);
+    if (this.opts.logoutAvailable) {
+      const logout = document.createElement('a');
+      const currentUrl = new URL(window.location.href);
+      currentUrl.searchParams.delete('token');
+      const next = `${currentUrl.pathname}${currentUrl.search}${currentUrl.hash}`;
+      const logoutUrl = this.opts.logoutUrl || `${this.opts.baseUrl}logout`;
+      const separator = logoutUrl.includes('?') ? '&' : '?';
+
+      logout.className = 'mrc-btn mrc-logout';
+      logout.href = `${logoutUrl}${separator}next=${encodeURIComponent(next)}`;
+      logout.textContent = 'Log out';
+      rightWrap.appendChild(logout);
+    }
+
+    inner.appendChild(brandWrap);
     inner.appendChild(rightWrap);
     header.appendChild(inner);
 

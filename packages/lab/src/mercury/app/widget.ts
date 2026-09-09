@@ -22,11 +22,8 @@ import {
   codeCellExecute,
   executeWidgetsManagerClearValues
 } from '../../executor/codecell';
-// import {
-//   getWidgetManager,
-//   resolveIpyModel,
-//   getWidgetModelIdsFromCell
-// } from './ipyWidgetsHelpers';
+import { isStopExecutionReply } from '../../executor/stop';
+import { getWidgetManager, resolveIpyModel } from './ipyWidgetsHelpers';
 
 import {
   hideErrorOutputsOnChange,
@@ -40,6 +37,29 @@ import type { INotebookModel } from '@jupyterlab/notebook';
 import type { DocumentRegistry } from '@jupyterlab/docregistry';
 import type { IObservableJSON } from '@jupyterlab/observables';
 import { BusyIndicator } from './busyIndicator';
+import {
+  getPageConfig,
+  IPageConfigLike
+} from '../themeCssVars';
+
+async function settleWithin<T>(
+  promise: Promise<T>,
+  timeoutMs: number
+): Promise<T | undefined> {
+  let timer: number | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<undefined>(resolve => {
+        timer = window.setTimeout(() => resolve(undefined), timeoutMs);
+      })
+    ]);
+  } finally {
+    if (timer !== undefined) {
+      window.clearTimeout(timer);
+    }
+  }
+}
 
 function readShowCodeFromContext(
   context: DocumentRegistry.IContext<INotebookModel>
@@ -135,52 +155,6 @@ const BOTTOM_RATIO = 0.15; // 15% height
 const DEFAULT_SIDEBAR_BG = '#f8f9fa';
 
 /**
- * Minimal page-config structure we actually consume.
- */
-interface IPageConfigLike {
-  baseUrl?: string;
-  showCode?: boolean;
-  theme?: {
-    sidebar_background_color?: string;
-  };
-}
-
-/**
- * Read the inline Jupyter page config JSON.
- * Throws if the element does not exist or contains invalid JSON.
- */
-function getPageConfig(): IPageConfigLike {
-  const el = document.getElementById('jupyter-config-data');
-  if (!el) {
-    throw new Error('Page config script not found');
-  }
-
-  try {
-    return JSON.parse(el.textContent || '{}') as IPageConfigLike;
-  } catch (err) {
-    console.warn('Invalid page config JSON:', err);
-    return {};
-  }
-}
-
-/**
- * Fetch theme overrides.
- * The `url` parameter is accepted for future flexibility.
- */
-// async function fetchTheme(_url: string) {
-//   try {
-//     const response = await fetch('http://localhost:8888/mercury/api/theme');
-//     if (!response.ok) {
-//       throw new Error(`Theme API error: ${response.status}`);
-//     }
-//     return await response.json();
-//   } catch (err) {
-//     console.warn('Failed to fetch theme overrides', err);
-//     return {};
-//   }
-// }
-
-/**
  * Main application widget that lays out notebook cells into
  * a sidebar (left), a main area (top-right), and a bottom panel (right).
  *
@@ -242,6 +216,7 @@ export class AppWidget extends Panel {
   private _cellsChangedConnected = false;
   private _widgetUpdatedConnected = false;
   private _mercuryWidgetAddedConnected = false;
+  private _leftTopbar!: Panel;
   private _leftHeader!: Panel;   // NEW: fixed header area
   private _leftContent!: Panel;  // NEW: scrollable area for sidebar widgets
   private _sidebarTitle?: string;
@@ -249,6 +224,10 @@ export class AppWidget extends Panel {
   private _autoRerun = true;
   private _leftFooter!: Panel;
   private _runAllBtn!: HTMLButtonElement;
+  private _collapseSidebarBtn?: HTMLButtonElement;
+  private _expandSidebarBtn?: HTMLButtonElement;
+  private _sidebarBackdrop?: HTMLDivElement;
+  private _rightTopbarEl?: HTMLDivElement;
   private _busy?: BusyIndicator;
   private _fullWidth = false;
   private _toastContainer?: HTMLDivElement;
@@ -256,8 +235,23 @@ export class AppWidget extends Panel {
   private _bottomMutationObserver?: MutationObserver;
   private _bottomObservedElements = new WeakSet<Element>();
   private _bottomResizeFrame: number | null = null;
+  private _sidebarHideTimer: number | null = null;
+  private _sidebarExpanded = false;
   private _requestedBottomContentHeights = new Map<string, number>();
   private _requestedBottomResizeSeqs = new Map<string, number>();
+  private readonly _mobileMediaQuery = window.matchMedia('(max-width: 768px)');
+  private _isMobileLayout(): boolean {
+    return this._mobileMediaQuery.matches;
+  }
+  private _onResponsiveLayoutChange = () => {
+    this.updatePanelVisibility();
+
+    if (this._isMobileLayout()) {
+      this._split?.setRelativeSizes([0, 1]);
+    } else if (this._lastLeftVisible) {
+      this._split?.setRelativeSizes([SIDEBAR_RATIO, MAIN_RATIO]);
+    }
+  };
   private _requestBottomResize = (event?: Event) => {
     const detail = (event as CustomEvent<{
       height?: number;
@@ -288,12 +282,28 @@ export class AppWidget extends Panel {
       /* empty */
     }
   };
+  private _toggleSidebar = () => {
+    const leftContentHasOutputs =
+      this.panelWidgets(this._leftContent).some(
+        w => (w as any).model?.length > 0
+      ) || !this._autoRerun;
+
+    if (!leftContentHasOutputs) {
+      this._notifySidebarVisibility(false);
+      return;
+    }
+
+    if (!this._sidebarExpanded) {
+      this._showSidebarFromToggle();
+    } else {
+      this._hideSidebarFromToggle();
+    }
+  };
 
   constructor(model: AppModel) {
     super();
 
     const pageConfig = getPageConfig();
-    // void fetchTheme(pageConfig.baseUrl || '');
 
     this._model = model;
 
@@ -315,8 +325,11 @@ export class AppWidget extends Panel {
       position: 'top-right'
     });
 
+    this.createRightTopbar();
+
     // Add root container to this widget
     this.addWidget(this._split);
+    this.createSidebarBackdrop();
 
     this.createToastContainer();
 
@@ -392,6 +405,11 @@ export class AppWidget extends Panel {
       'mercury:bottom-resize-requested',
       this._requestBottomResize
     );
+    window.addEventListener('mercury:toggle-sidebar', this._toggleSidebar);
+    this._mobileMediaQuery.addEventListener(
+      'change',
+      this._onResponsiveLayoutChange
+    );
   }
 
   private createToastContainer(): void {
@@ -402,6 +420,31 @@ export class AppWidget extends Panel {
     el.className = 'mercury-toast-container';
     this.node.appendChild(el);
     this._toastContainer = el;
+  }
+
+  private createSidebarBackdrop(): void {
+    if (this._sidebarBackdrop) {
+      return;
+    }
+    const el = document.createElement('div');
+    el.className = 'mercury-sidebar-backdrop';
+    el.addEventListener('click', () => {
+      if (this._isMobileLayout() && this._sidebarExpanded) {
+        this._hideSidebarFromToggle();
+      }
+    });
+    this.node.appendChild(el);
+    this._sidebarBackdrop = el;
+  }
+
+  private createRightTopbar(): void {
+    if (this._rightTopbarEl) {
+      return;
+    }
+    const topbar = document.createElement('div');
+    topbar.className = 'mercury-right-topbar';
+    this.node.appendChild(topbar);
+    this._rightTopbarEl = topbar;
   }
 
   private onExecutionError(_model: AppModel, err: IExecutionError): void {
@@ -485,7 +528,11 @@ export class AppWidget extends Panel {
     // Set split sizes after first paint
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
-        this._split.setRelativeSizes([SIDEBAR_RATIO, MAIN_RATIO]);
+        if (this._isMobileLayout()) {
+          this._split.setRelativeSizes([0, 1]);
+        } else {
+          this._split.setRelativeSizes([SIDEBAR_RATIO, MAIN_RATIO]);
+        }
         this._rightSplit.setRelativeSizes([TOP_RATIO, BOTTOM_RATIO]);
       });
     });
@@ -495,6 +542,14 @@ export class AppWidget extends Panel {
     if (this.isDisposed) {
       return;
     }
+    try {
+      this._rightTopbarEl?.remove();
+      this._rightTopbarEl = undefined;
+    } catch { }
+    try {
+      this._sidebarBackdrop?.remove();
+      this._sidebarBackdrop = undefined;
+    } catch { }
     try {
       if (this._toastContainer) {
         this._toastContainer.remove();
@@ -541,6 +596,7 @@ export class AppWidget extends Panel {
       window.cancelAnimationFrame(this._bottomResizeFrame);
       this._bottomResizeFrame = null;
     }
+    this._clearSidebarHideTimer();
     this._bottomResizeObserver?.disconnect();
     this._bottomMutationObserver?.disconnect();
     try { this._busy?.dispose(); } catch { }
@@ -552,6 +608,11 @@ export class AppWidget extends Panel {
       'mercury:bottom-resize-requested',
       this._requestBottomResize
     );
+    window.removeEventListener('mercury:toggle-sidebar', this._toggleSidebar);
+    this._mobileMediaQuery.removeEventListener(
+      'change',
+      this._onResponsiveLayoutChange
+    );
     super.dispose();
   }
 
@@ -561,6 +622,141 @@ export class AppWidget extends Panel {
 
   get cellWidgets(): CellItemWidget[] {
     return this._cellItems;
+  }
+
+  setSharedRunRequester(requester: ((fromIndex: number) => void) | null): void {
+    this._sharedRunRequester = requester;
+  }
+
+  async runSharedCells(
+    fromIndex: number,
+    lease: { sessionId: string; clientId: string; runId: number; token: string }
+  ): Promise<void> {
+    await this._runCellsFromIndex(fromIndex, {
+      mercury: {
+        shared_session: {
+          session_id: lease.sessionId,
+          client_id: lease.clientId,
+          run_id: lease.runId,
+          token: lease.token
+        }
+      }
+    });
+  }
+
+  applySharedOutput(cellId: string, message: any, reset = false): void {
+    const item = this._cellItems.find(candidate => candidate.cellId === cellId);
+    if (!item || !(item.child instanceof CodeCell)) {
+      return;
+    }
+    // Shared outputs are captured from this app's live kernel, just like the
+    // messages handled by a normal cell execution. Late joiners have not run
+    // those cells locally, however, so their models can still be untrusted.
+    // JupyterLab only considers the ipywidget renderer for trusted outputs and
+    // otherwise falls back to text/plain (the Python object repr).
+    item.child.model.trusted = true;
+    const outputArea = item.child.outputArea as any;
+    if (reset) {
+      outputArea.model.clear();
+      if (typeof outputArea._clear === 'function') {
+        outputArea._clear();
+      }
+    }
+    if (typeof outputArea._onIOPub === 'function') {
+      outputArea._onIOPub(message);
+    }
+  }
+
+  async applySharedSnapshot(outputs: Record<string, any[]>): Promise<boolean> {
+    // The notebook model can contain a text/plain fallback for widget outputs.
+    // Remove it immediately so late joiners never see Python object reprs while
+    // their live widget models are being restored.
+    for (const item of this._cellItems) {
+      if (item.child instanceof CodeCell) {
+        const outputArea = item.child.outputArea as any;
+        outputArea.model.clear();
+        if (typeof outputArea._clear === 'function') {
+          outputArea._clear();
+        }
+      }
+    }
+
+    const widgetModelsReady = await this.waitForSharedWidgetModels(outputs);
+    if (this.isDisposed) {
+      return false;
+    }
+    if (!widgetModelsReady) {
+      console.warn(
+        '[Mercury] Shared widget models are unavailable; requesting a recovery rerun'
+      );
+      return false;
+    }
+    for (const [cellId, messages] of Object.entries(outputs)) {
+      messages.forEach(message => this.applySharedOutput(cellId, message));
+    }
+    this.updatePanelVisibility();
+    return true;
+  }
+
+  private async waitForSharedWidgetModels(
+    outputs: Record<string, any[]>,
+    timeoutMs = 10000
+  ): Promise<boolean> {
+    const modelIds = new Set<string>();
+    for (const messages of Object.values(outputs)) {
+      for (const message of messages) {
+        const widgetView =
+          message?.content?.data?.[
+            'application/vnd.jupyter.widget-view+json'
+          ];
+        let modelId = widgetView?.model_id;
+        if (typeof widgetView === 'string') {
+          try {
+            modelId = JSON.parse(widgetView)?.model_id;
+          } catch {
+            modelId = undefined;
+          }
+        }
+        if (typeof modelId === 'string' && modelId) {
+          modelIds.add(modelId);
+        }
+      }
+    }
+    if (modelIds.size === 0) {
+      return true;
+    }
+
+    const deadline = Date.now() + timeoutMs;
+    while (!this.isDisposed && Date.now() < deadline) {
+      const remaining = deadline - Date.now();
+      const manager = await settleWithin(
+        getWidgetManager(this._model.rendermime),
+        Math.min(1000, remaining)
+      );
+      if (manager) {
+        const models = await settleWithin(
+          Promise.all(
+            Array.from(modelIds, modelId => resolveIpyModel(manager, modelId))
+          ),
+          Math.min(1000, Math.max(1, deadline - Date.now()))
+        );
+        if (models?.every(model => model && model.comm_live !== false)) {
+          return true;
+        }
+        // A completed restore with unresolved ids means the snapshot refers to
+        // models that are no longer present in the kernel. Waiting longer
+        // cannot repair that state; let the coordinator schedule a fresh run.
+        if (manager.restoredStatus === true) {
+          return false;
+        }
+      }
+      await new Promise(resolve => window.setTimeout(resolve, 100));
+    }
+
+    console.warn(
+      `[Mercury] Timed out waiting for ${modelIds.size} shared widget models`
+    );
+    return false;
   }
 
   /**
@@ -787,6 +983,7 @@ export class AppWidget extends Panel {
       this._rightSplit = rightSplit;
       this._rightTop = rightTop;
       this._rightBottom = rightBottom;
+      this.createRightTopbar();
       this._split = this.createMainSplit(this._left, this._rightSplit);
       this.addWidget(this._split);
       this.installSidebarToggles();
@@ -961,11 +1158,13 @@ export class AppWidget extends Panel {
     targetOrder?: number,
     targetKind: 'input' | 'output' | 'other' = 'other'
   ): number {
+    const baseIndex = 0;
+
     if (targetOrder === undefined) {
-      return this.panelWidgets(container).length;
+      return this.panelWidgets(container).length + baseIndex;
     }
 
-    let idx = 0;
+    let idx = baseIndex;
     for (const w of this.panelWidgets(container)) {
       const ci = this._cellItems.find(
         c =>
@@ -1121,6 +1320,7 @@ export class AppWidget extends Panel {
   private _rerunInProgress = false;
   private _pendingRerunFromIndex: number | null = null;
   private _rerunTimer: number | null = null;
+  private _sharedRunRequester: ((fromIndex: number) => void) | null = null;
 
   private onWidgetUpdate = (_model: AppModel, update: IWidgetUpdate) => {
     if (!this._autoRerun || this.isDisposed) {
@@ -1143,6 +1343,11 @@ export class AppWidget extends Panel {
     }
 
     const fromIndex = updatedIndex + 1;
+
+    if (this._sharedRunRequester) {
+      this._sharedRunRequester(fromIndex);
+      return;
+    }
 
     // If we are busy, just remember earliest affected index
     if (!this._acceptWidgetInput || this._rerunInProgress) {
@@ -1172,7 +1377,10 @@ export class AppWidget extends Panel {
     }, 10);
   };
 
-  private async _runCellsFromIndex(fromIndex: number): Promise<void> {
+  private async _runCellsFromIndex(
+    fromIndex: number,
+    executionMetadata?: Record<string, any>
+  ): Promise<void> {
     // If a run is already happening, coalesce and exit
     if (this._rerunInProgress) {
       this._pendingRerunFromIndex =
@@ -1210,7 +1418,14 @@ export class AppWidget extends Panel {
           continue;
         }
 
-        await codeCellExecute(child, this._model.context.sessionContext);
+        const reply = await codeCellExecute(
+          child,
+          this._model.context.sessionContext,
+          executionMetadata
+        );
+        if (isStopExecutionReply(reply)) {
+          break;
+        }
         // await every 5th cell
         // if ((i - fromIndex) % 2 === 0) {
         //   await codeCellExecute(child, this._model.context.sessionContext);
@@ -1233,7 +1448,7 @@ export class AppWidget extends Panel {
       if (this._pendingRerunFromIndex !== null) {
         const nextFrom = this._pendingRerunFromIndex;
         this._pendingRerunFromIndex = null;
-        void this._runCellsFromIndex(nextFrom);
+        void this._runCellsFromIndex(nextFrom, executionMetadata);
       }
     }
   }
@@ -1301,13 +1516,16 @@ export class AppWidget extends Panel {
 
       const item = this._cellItems.find(w => w.cellId === m.id);
       if (item && item.child instanceof CodeCell) {
-        await codeCellExecute(
+        const reply = await codeCellExecute(
           item.child as CodeCell,
           this._model.context.sessionContext,
           {
             deletedCells: this._model.context.model?.deletedCells ?? []
           }
         );
+        if (isStopExecutionReply(reply)) {
+          break;
+        }
       }
     }
     await executeWidgetsManagerClearValues(this._model.context.sessionContext);
@@ -1405,6 +1623,9 @@ export class AppWidget extends Panel {
     left.node.style.backgroundColor =
       pageConfig?.theme?.sidebar_background_color ?? DEFAULT_SIDEBAR_BG;
 
+    this._leftTopbar = new Panel();
+    this._leftTopbar.addClass('mercury-left-topbar');
+
     // Header panel (fixed at top)
     this._leftHeader = new Panel();
     this._leftHeader.addClass('mercury-left-header');
@@ -1434,7 +1655,8 @@ export class AppWidget extends Panel {
     this._runAllBtn.style.display = 'none';
     this._leftFooter.node.appendChild(this._runAllBtn);
 
-    // Compose: header → content → footer
+    // Compose: topbar -> header -> content -> footer
+    left.addWidget(this._leftTopbar);
     left.addWidget(this._leftHeader);
     left.addWidget(this._leftContent);
     left.addWidget(this._leftFooter);
@@ -1493,31 +1715,29 @@ export class AppWidget extends Panel {
 
   private installSidebarToggles(): void {
     const collapseBtn = document.createElement('button');
-    collapseBtn.innerHTML = '«';
+    collapseBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="icon icon-tabler icons-tabler-outline icon-tabler-chevrons-left"><path stroke="none" d="M0 0h24v24H0z" fill="none" /><path d="M11 7l-5 5l5 5" /><path d="M17 7l-5 5l5 5" /></svg>`;
     collapseBtn.className = 'mercury-sidebar-toggle mercury-sidebar-collapse';
     collapseBtn.title = 'Hide sidebar';
-    this._left.node.appendChild(collapseBtn);
+    this._leftTopbar.node.appendChild(collapseBtn);
 
     const expandBtn = document.createElement('button');
-    expandBtn.innerHTML = '»';
+    expandBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="icon icon-tabler icons-tabler-outline icon-tabler-chevrons-right"><path stroke="none" d="M0 0h24v24H0z" fill="none" /><path d="M7 7l5 5l-5 5" /><path d="M13 7l5 5l-5 5" /></svg>`;
     expandBtn.className = 'mercury-sidebar-toggle mercury-sidebar-expand';
     expandBtn.title = 'Show sidebar';
     expandBtn.style.display = 'none';
-    this.node.appendChild(expandBtn);
+    this._rightTopbarEl?.appendChild(expandBtn);
+    this._collapseSidebarBtn = collapseBtn;
+    this._expandSidebarBtn = expandBtn;
 
     collapseBtn.onclick = () => {
-      this._left.hide();
-      this._split.setRelativeSizes([0, 1]);
-      collapseBtn.style.display = 'none';
-      expandBtn.style.display = '';
+      this._hideSidebarFromToggle();
     };
 
     expandBtn.onclick = () => {
-      this._left.show();
-      this._split.setRelativeSizes([SIDEBAR_RATIO, MAIN_RATIO]);
-      collapseBtn.style.display = '';
-      expandBtn.style.display = 'none';
+      this._showSidebarFromToggle();
     };
+
+    this._syncSidebarToggleButtons();
   }
 
   private updatePanelVisibility(): void {
@@ -1532,14 +1752,64 @@ export class AppWidget extends Panel {
       w => (w as any).model?.length > 0
     );
 
-    if (!leftContentHasOutputs) {
-      this._left?.hide();
-      if (this._lastLeftVisible !== false) this._split?.setRelativeSizes([0, 1]);
+    if (this._isMobileLayout()) {
+      if (!leftContentHasOutputs) {
+        this._clearSidebarHideTimer();
+        this._left.node.classList.remove('mercury-left-panel-visible');
+        this._left.node.classList.add('mercury-left-panel-collapsed');
+        this._sidebarExpanded = false;
+        this._sidebarHideTimer = window.setTimeout(() => {
+          this._sidebarHideTimer = null;
+          if (!this._left.node.classList.contains('mercury-left-panel-visible')) {
+            this._left.hide();
+          }
+        }, AppWidget.SIDEBAR_TRANSITION_MS);
+      } else {
+        this._clearSidebarHideTimer();
+        this._left.show();
+        this._left.node.classList.remove('mercury-left-panel-collapsed');
+        this._refreshSplitConstraints();
+        requestAnimationFrame(() => {
+          this._left.node.classList.add('mercury-left-panel-visible');
+        });
+        this._sidebarExpanded = true;
+      }
+
+      // On mobile the right side should always keep full width.
+      this._split?.setRelativeSizes([0, 1]);
+
+      // Do not let mobile state affect desktop bookkeeping.
+      this._lastLeftVisible = false;
     } else {
-      this._left?.show();
-      if (this._lastLeftVisible !== true) this._split?.setRelativeSizes([SIDEBAR_RATIO, MAIN_RATIO]);
+      if (!leftContentHasOutputs) {
+        this._clearSidebarHideTimer();
+        this._left.node.classList.remove('mercury-left-panel-visible');
+        this._left.node.classList.add('mercury-left-panel-collapsed');
+        this._sidebarExpanded = false;
+        this._left.hide();
+        this._refreshSplitConstraints();
+        this._split?.setRelativeSizes([0, 1]);
+      } else {
+        this._clearSidebarHideTimer();
+        this._left.show();
+        this._left.node.classList.remove('mercury-left-panel-collapsed');
+        this._refreshSplitConstraints();
+        requestAnimationFrame(() => {
+          this._left.node.classList.add('mercury-left-panel-visible');
+        });
+        this._sidebarExpanded = true;
+        if (this._lastLeftVisible !== true) {
+          this._split?.setRelativeSizes([SIDEBAR_RATIO, MAIN_RATIO]);
+        }
+      }
+
+      this._lastLeftVisible = leftContentHasOutputs;
     }
-    this._lastLeftVisible = leftContentHasOutputs;
+
+    this._notifySidebarVisibility(this._sidebarExpanded);
+    this._syncSidebarToggleButtons();
+    this._syncSidebarBackdrop();
+    // this._syncDesktopCollapsedLayout();
 
     // refresh bottom height
     void this._rightBottom.node.offsetHeight;
@@ -1558,6 +1828,154 @@ export class AppWidget extends Panel {
   }
 
   private static readonly MAX_BOTTOM_PX = 320;
+  private static readonly SIDEBAR_TRANSITION_MS = 220;
+
+  private _clearSidebarHideTimer(): void {
+    if (this._sidebarHideTimer !== null) {
+      window.clearTimeout(this._sidebarHideTimer);
+      this._sidebarHideTimer = null;
+    }
+  }
+
+  private _notifySidebarVisibility(visible: boolean): void {
+    window.dispatchEvent(
+      new CustomEvent('mercury:sidebar-visibility-changed', {
+        detail: { visible }
+      })
+    );
+  }
+
+  private _refreshSplitConstraints(): void {
+    try {
+      this._split?.fit();
+      this._split?.update();
+    } catch {
+      /* empty */
+    }
+  }
+
+  private _refreshRightSplitLayout(): void {
+    try {
+      this._rightSplit?.fit();
+      this._rightSplit?.update();
+    } catch {
+      /* empty */
+    }
+
+    requestAnimationFrame(() => {
+      if (this._rightBottom && !this._rightBottom.isHidden) {
+        this.adjustBottomHeight();
+      }
+    });
+  }
+
+  private _syncSidebarToggleButtons(): void {
+    if (!this._collapseSidebarBtn || !this._expandSidebarBtn) {
+      return;
+    }
+
+    const sidebarHasContent =
+      this.panelWidgets(this._leftContent).some(
+        w => (w as any).model?.length > 0
+      ) || !this._autoRerun;
+
+    if (this._isMobileLayout()) {
+      this._rightTop?.addClass('mercury-right-top-panel-with-sidebar-toggle');
+      this._collapseSidebarBtn.style.display = this._sidebarExpanded ? '' : 'none';
+      this._expandSidebarBtn.style.display =
+        !sidebarHasContent || this._sidebarExpanded ? 'none' : '';
+      if (this._sidebarExpanded || !sidebarHasContent) {
+        this._rightTopbarEl?.classList.remove('mercury-right-topbar-visible');
+      } else {
+        this._rightTopbarEl?.classList.add('mercury-right-topbar-visible');
+      }
+      return;
+    }
+
+    this._collapseSidebarBtn.style.display = this._sidebarExpanded ? '' : 'none';
+    this._expandSidebarBtn.style.display =
+      !sidebarHasContent || this._sidebarExpanded ? 'none' : '';
+    if (this._sidebarExpanded || !sidebarHasContent) {
+      this._rightTopbarEl?.classList.remove('mercury-right-topbar-visible');
+      this._rightTop?.removeClass('mercury-right-top-panel-with-sidebar-toggle');
+    } else {
+      this._rightTopbarEl?.classList.add('mercury-right-topbar-visible');
+      this._rightTop?.addClass('mercury-right-top-panel-with-sidebar-toggle');
+    }
+  }
+
+  private _syncSidebarBackdrop(): void {
+    if (!this._sidebarBackdrop) {
+      return;
+    }
+
+    this._sidebarBackdrop.classList.toggle(
+      'mercury-sidebar-backdrop-visible',
+      this._isMobileLayout() && this._sidebarExpanded
+    );
+  }
+
+  // private _syncDesktopCollapsedLayout(): void {
+  //   this.node.classList.toggle(
+  //     'mercury-desktop-sidebar-collapsed',
+  //     !this._isMobileLayout() && !this._sidebarExpanded
+  //   );
+  // }
+
+  private _hideSidebarFromToggle(): void {
+    this._clearSidebarHideTimer();
+    this._left.node.classList.remove('mercury-left-panel-visible');
+    this._left.node.classList.add('mercury-left-panel-collapsed');
+    this._refreshSplitConstraints();
+    this._split.setRelativeSizes([0, 1]);
+    this._sidebarExpanded = false;
+
+    if (!this._isMobileLayout()) {
+      this._left.hide();
+      this._lastLeftVisible = false;
+      this._notifySidebarVisibility(false);
+      this._syncSidebarToggleButtons();
+      this._syncSidebarBackdrop();
+      this._refreshRightSplitLayout();
+      // this._syncDesktopCollapsedLayout();
+      return;
+    }
+
+    this._notifySidebarVisibility(false);
+    this._syncSidebarToggleButtons();
+    this._syncSidebarBackdrop();
+    // this._syncDesktopCollapsedLayout();
+    this._sidebarHideTimer = window.setTimeout(() => {
+      this._sidebarHideTimer = null;
+      if (!this._left.node.classList.contains('mercury-left-panel-visible')) {
+        this._left.hide();
+      }
+    }, AppWidget.SIDEBAR_TRANSITION_MS);
+  }
+
+  private _showSidebarFromToggle(): void {
+    this._clearSidebarHideTimer();
+    this._left.show();
+    this._left.node.classList.remove('mercury-left-panel-collapsed');
+    this._refreshSplitConstraints();
+
+    if (this._isMobileLayout()) {
+      this._split.setRelativeSizes([0, 1]);
+    } else {
+      this._split.setRelativeSizes([SIDEBAR_RATIO, MAIN_RATIO]);
+      this._lastLeftVisible = true;
+    }
+    this._sidebarExpanded = true;
+
+    requestAnimationFrame(() => {
+      this._left.node.classList.add('mercury-left-panel-visible');
+    });
+    this._notifySidebarVisibility(true);
+    this._syncSidebarToggleButtons();
+    this._syncSidebarBackdrop();
+    this._refreshRightSplitLayout();
+    // this._syncDesktopCollapsedLayout();
+  }
 
   private observeBottomContent(root: HTMLElement): void {
     if (!this._bottomResizeObserver) {

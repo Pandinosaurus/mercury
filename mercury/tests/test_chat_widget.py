@@ -1,6 +1,11 @@
 import mercury.chat.chat as chat_module
+import mercury.columns as columns_module
+import mercury.md as md_module
 from mercury.chat.chat import Chat
-from mercury.chat.message import Message
+from mercury.chat.message import DEFAULT_EMOJI_BACKGROUND, Message
+from mercury.columns import Columns
+from mercury.md import Markdown
+from mercury.render_context import get_render_context
 
 
 class FakeTimer:
@@ -34,6 +39,7 @@ def test_chat_default_height_preserves_natural_layout(monkeypatch):
     assert chat.height == ""
     assert chat.vbox.layout.height is None
     assert chat.vbox.layout.overflow == "visible"
+    assert chat._scroller.owns_scroll is False
     assert "mljar-chat-container" in chat.vbox._dom_classes
 
 
@@ -45,7 +51,8 @@ def test_chat_height_sets_internal_scroll(monkeypatch):
 
     assert chat.height == "600px"
     assert chat.vbox.layout.height == "600px"
-    assert chat.vbox.layout.overflow == "auto"
+    assert chat.vbox.layout.overflow == "hidden auto"
+    assert chat._scroller.owns_scroll is True
 
 
 def test_chat_height_accepts_viewport_units(monkeypatch):
@@ -56,7 +63,100 @@ def test_chat_height_accepts_viewport_units(monkeypatch):
 
     assert chat.height == "70vh"
     assert chat.vbox.layout.height == "70vh"
-    assert chat.vbox.layout.overflow == "auto"
+    assert chat.vbox.layout.overflow == "hidden auto"
+    assert chat._scroller.owns_scroll is True
+
+
+def test_chat_clears_current_cell_output_outside_layout(monkeypatch):
+    monkeypatch.setattr(chat_module, "display", lambda *_: None)
+
+    clear_calls = []
+    monkeypatch.setattr(
+        chat_module,
+        "clear_output",
+        lambda *_, **kwargs: clear_calls.append(kwargs),
+    )
+
+    Chat()
+
+    assert clear_calls == [{"wait": True}]
+
+
+def test_column_displays_label_and_chat_together(monkeypatch):
+    monkeypatch.setattr(columns_module, "display", lambda *_: None)
+    monkeypatch.setattr(columns_module, "_display_style", lambda: None)
+
+    displayed_by_slot = {}
+
+    def capture_display(*objects):
+        slot_id = get_render_context().render_slot_id
+        displayed_by_slot.setdefault(slot_id, []).extend(objects)
+
+    def capture_clear_output(*_, **__):
+        slot_id = get_render_context().render_slot_id
+        displayed_by_slot.setdefault(slot_id, []).clear()
+
+    monkeypatch.setattr(md_module, "display", capture_display)
+    monkeypatch.setattr(chat_module, "display", capture_display)
+    monkeypatch.setattr(chat_module, "clear_output", capture_clear_output)
+
+    column = Columns(1, key="chat-parent-output-regression")[0]
+    with column:
+        label = Markdown("### Model name")
+        chat = Chat()
+
+    slot_id = column.layout_frame.slot_id
+    assert displayed_by_slot[slot_id] == [label, chat.vbox, chat._scroller]
+
+
+def test_message_expands_instead_of_becoming_a_scroll_container():
+    message = Message(role="assistant")
+
+    assert message.layout.flex == "0 0 auto"
+    assert message.layout.overflow == "visible"
+    assert message.output.layout.overflow == "visible"
+
+
+def test_message_css_disables_nested_vertical_scroll_containers():
+    css = Message._message_css()
+
+    assert "flex: 0 0 auto !important" in css
+    assert css.count("overflow: visible !important") >= 3
+    assert ".mljar-chat-msg-bubble > .jp-OutputArea" in css
+    assert ".mljar-chat-msg-bubble .jp-OutputArea-output" in css
+
+
+def test_multiple_chats_have_isolated_scroll_targets(monkeypatch):
+    monkeypatch.setattr(chat_module, "display", lambda *_: None)
+    monkeypatch.setattr(chat_module, "clear_output", lambda *_, **__: None)
+
+    first = Chat(height="500px")
+    second = Chat(height="500px")
+
+    assert first._chat_css_class != second._chat_css_class
+    assert first._scroller.chat_css_class == first._chat_css_class
+    assert second._scroller.chat_css_class == second._chat_css_class
+    assert first._chat_css_class in first.vbox._dom_classes
+    assert second._chat_css_class in second.vbox._dom_classes
+
+
+def test_fixed_height_scroll_helper_never_targets_an_ancestor():
+    source = chat_module.ScrollHelper._esm
+
+    assert "if (OWNS_SCROLL)" in source
+    assert "root.scrollTop = root.scrollHeight" in source
+    assert "getScrollableAncestor(root)" in source
+    assert "getScrollableAncestor(last)" not in source
+
+
+def test_scroll_helper_pauses_when_reader_leaves_bottom_and_cancels_stale_work():
+    source = chat_module.ScrollHelper._esm
+
+    assert "pinnedToBottom = isNearBottom(root)" in source
+    assert 'root.addEventListener("scroll", trackScrollPosition' in source
+    assert "if (frameId !== null) cancelAnimationFrame(frameId)" in source
+    assert "if (timerId !== null) clearTimeout(timerId)" in source
+    assert 'model.off("change:tick", scheduleScroll)' in source
 
 
 def test_message_append_after_chat_add_schedules_debounced_scroll(monkeypatch):
@@ -172,3 +272,19 @@ def test_scroll_debounce_zero_scrolls_immediately(monkeypatch):
 
     assert chat._scroller.tick == tick_after_add + 1
     assert FakeTimer.instances == []
+
+
+def test_message_uses_default_emoji_background():
+    msg = Message(role="assistant")
+
+    avatar_html = msg.children[0].value
+
+    assert f"background:{DEFAULT_EMOJI_BACKGROUND};" in avatar_html
+
+
+def test_message_accepts_custom_emoji_background():
+    msg = Message(role="assistant", emoji_background="#123456")
+
+    avatar_html = msg.children[0].value
+
+    assert "background:#123456;" in avatar_html

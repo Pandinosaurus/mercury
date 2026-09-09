@@ -115,25 +115,29 @@ def MultiSelect(
         if len(value) == 0:
             value = [choices[0]]
 
-    args = [value, label, choices, url_key, placeholder, position]
+    args = [value, label, choices, url_key, placeholder, position, disabled, hidden]
     kwargs = {
         "value": value,
         "label": label, 
         "choices": choices,
         "url_key": url_key,
         "placeholder": placeholder,
-        "position": position
+        "position": position,
+        "disabled": disabled,
+        "hidden": hidden,
     }
 
     code_uid = WidgetsManager.get_code_uid("MultiSelect", key=key, args=args, kwargs=kwargs)
     cached = WidgetsManager.get_widget(code_uid)
     if cached:
+        WidgetsManager.register_input(code_uid, cached, key=key, url_key=url_key)
         apply_widget_render_metadata(cached)
         display(cached)
         return cached
 
     instance = MultiSelectWidget(**with_widget_render_metadata(kwargs))
     WidgetsManager.add_widget(code_uid, instance)
+    WidgetsManager.register_input(code_uid, instance, key=key, url_key=url_key)
     display(instance)
     return instance
 
@@ -203,13 +207,23 @@ class MultiSelectWidget(anywidget.AnyWidget):
       dropdown.appendChild(emptyState);
 
       container.appendChild(control);
-      container.appendChild(dropdown);
       el.appendChild(container);
 
       let isOpen = false;
       let isEditing = false;
       let filteredChoices = [];
       let blurTimeout = null;
+      document.body.appendChild(dropdown);
+
+      const updateDropdownPosition = () => {
+        if (!isOpen) {
+          return;
+        }
+        const rect = control.getBoundingClientRect();
+        dropdown.style.top = `${rect.bottom + 6}px`;
+        dropdown.style.left = `${rect.left}px`;
+        dropdown.style.width = `${rect.width}px`;
+      };
 
       const setOpen = next => {
         if (isDisabled()) {
@@ -219,6 +233,9 @@ class MultiSelectWidget(anywidget.AnyWidget):
         }
         container.classList.toggle("is-open", isOpen);
         dropdown.style.display = isOpen ? "block" : "none";
+        if (isOpen) {
+          updateDropdownPosition();
+        }
       };
 
       const syncEditingState = () => {
@@ -369,12 +386,28 @@ class MultiSelectWidget(anywidget.AnyWidget):
         setOpen(true);
       };
 
+      const closeDropdown = () => {
+        if (blurTimeout !== null) {
+          window.clearTimeout(blurTimeout);
+          blurTimeout = null;
+        }
+        isEditing = false;
+        setOpen(false);
+        input.value = "";
+        syncEditingState();
+      };
+
       control.addEventListener("click", event => {
         event.stopPropagation();
         if (isDisabled()) {
           return;
         }
         if (event.target === input || clearBtn.contains(event.target)) {
+          return;
+        }
+        if (event.target === caret && isOpen) {
+          closeDropdown();
+          input.blur();
           return;
         }
         openWithCurrentQuery();
@@ -427,19 +460,14 @@ class MultiSelectWidget(anywidget.AnyWidget):
       });
 
       const handleDocumentClick = event => {
-        if (!container.contains(event.target)) {
-          if (blurTimeout !== null) {
-            window.clearTimeout(blurTimeout);
-            blurTimeout = null;
-          }
-          isEditing = false;
-          setOpen(false);
-          input.value = "";
-          syncEditingState();
+        if (!container.contains(event.target) && !dropdown.contains(event.target)) {
+          closeDropdown();
         }
       };
 
       document.addEventListener("click", handleDocumentClick);
+      window.addEventListener("resize", updateDropdownPosition);
+      document.addEventListener("scroll", updateDropdownPosition, true);
 
       model.on("change:value", () => {
         renderSummary();
@@ -452,9 +480,7 @@ class MultiSelectWidget(anywidget.AnyWidget):
       model.on("change:disabled", () => {
         updateDisabledState();
         if (isDisabled()) {
-          isEditing = false;
-          setOpen(false);
-          syncEditingState();
+          closeDropdown();
         }
       });
       model.on("change:hidden", () => {
@@ -472,7 +498,10 @@ class MultiSelectWidget(anywidget.AnyWidget):
         if (blurTimeout !== null) {
           window.clearTimeout(blurTimeout);
         }
+        dropdown.remove();
         document.removeEventListener("click", handleDocumentClick);
+        window.removeEventListener("resize", updateDropdownPosition);
+        document.removeEventListener("scroll", updateDropdownPosition, true);
       };
     }
     export default { render };
@@ -481,16 +510,18 @@ class MultiSelectWidget(anywidget.AnyWidget):
     # minimal CSS
     _css = f"""
     .mljar-ms-container {{
+      position: relative;
       display: flex;
       flex-direction: column;
       font-family: {THEME.get('font_family', 'Arial, sans-serif')};
       font-size: {THEME.get('font_size', '14px')};
-      margin-bottom: 8px;
       padding-left: 4px;
       padding-right: 4px;
+      overflow: visible;
     }}
 
     .mljar-ms-label {{
+      padding-top: 6px;
       margin-bottom: 4px;
       font-weight: 600;
       color: {THEME.get('text_color', '#222')};
@@ -505,15 +536,20 @@ class MultiSelectWidget(anywidget.AnyWidget):
       padding: 4px 60px 4px 8px;
       border: 1px solid {THEME.get('border_color', '#ccc')};
       border-radius: {THEME.get('border_radius', '6px')};
-      background: #fff;
+      background: {THEME.get('widget_background_color', '#fff')};
       box-sizing: border-box;
       transition: border-color 0.15s ease, box-shadow 0.15s ease;
       cursor: default;
+      overflow: visible;
+    }}
+
+    .mljar-ms-container.is-open {{
+      z-index: 20;
     }}
 
     .mljar-ms-control:focus-within {{
-      border-color: {THEME.get('accent_color', '#4c7cf0')};
-      box-shadow: 0 0 0 3px rgba(76, 124, 240, 0.16);
+      border-color: {THEME.get('focus_border_color', THEME.get('accent_color', '#4c7cf0'))};
+      box-shadow: none;
     }}
 
     .mljar-ms-selected {{
@@ -543,8 +579,8 @@ class MultiSelectWidget(anywidget.AnyWidget):
       min-height: 28px;
       padding: 3px 8px;
       border-radius: 999px;
-      background: #eef3ff;
-      color: #1f4fd1;
+      background: {THEME.get('selected_background_color', '#eef3ff')};
+      color: {THEME.get('accent_color', '#1f4fd1')};
       box-sizing: border-box;
     }}
 
@@ -580,10 +616,10 @@ class MultiSelectWidget(anywidget.AnyWidget):
       max-width: none;
       padding: 3px 0;
       border: 0;
-      background: #fff;
+      background: {THEME.get('widget_background_color', '#fff')};
       box-sizing: border-box;
       appearance: none !important;
-      background-color: #ffffff !important;
+      background-color: {THEME.get('widget_background_color', '#fff')} !important;
       color: {THEME.get('text_color', '#222')} !important;
       line-height: 1.4;
       cursor: default;
@@ -678,7 +714,7 @@ class MultiSelectWidget(anywidget.AnyWidget):
       border-right: 1.5px solid {THEME.get('text_color', '#222')};
       border-bottom: 1.5px solid {THEME.get('text_color', '#222')};
       transform: translateY(-65%) rotate(45deg);
-      pointer-events: none;
+      pointer-events: auto;
       opacity: 0.5;
       transition: transform 0.18s ease, opacity 0.18s ease;
     }}
@@ -690,10 +726,11 @@ class MultiSelectWidget(anywidget.AnyWidget):
 
     .mljar-ms-dropdown {{
       display: none;
-      margin-top: 6px;
+      position: fixed;
+      z-index: 10000;
       border: 1px solid {THEME.get('border_color', '#ccc')};
       border-radius: {THEME.get('border_radius', '6px')};
-      background: #fff;
+      background: {THEME.get('panel_bg', '#fff')};
       box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
       overflow: hidden;
     }}
@@ -715,23 +752,35 @@ class MultiSelectWidget(anywidget.AnyWidget):
       text-align: left;
       cursor: pointer;
       font: inherit;
+      transition: background-color 0.14s ease, color 0.14s ease;
     }}
 
     .mljar-ms-option:hover {{
-      background: #f5f7fb;
+      background: {THEME.get('hover_background_color', '#f5f7fb')};
+    }}
+
+    .mljar-ms-option:active {{
+      background: {THEME.get('selected_background_color', '#eef3ff')};
+      color: {THEME.get('accent_color', '#1f4fd1')};
     }}
 
     .mljar-ms-option.is-selected {{
-      background: #eef3ff;
-      color: #1f4fd1;
+      background: {THEME.get('selected_background_color', '#eef3ff')};
+      color: {THEME.get('accent_color', '#1f4fd1')};
       font-weight: 600;
+    }}
+
+    .mljar-ms-option.is-selected:hover,
+    .mljar-ms-option.is-selected:active {{
+      background: {THEME.get('selected_background_color', '#eef3ff')};
+      color: {THEME.get('accent_color', '#1f4fd1')};
     }}
 
     .mljar-ms-option-marker {{
       width: 16px;
       flex: 0 0 16px;
       text-align: center;
-      color: #1f4fd1;
+      color: {THEME.get('accent_color', '#1f4fd1')};
       font-weight: 700;
     }}
 

@@ -146,10 +146,36 @@ def test_multiselectwidget_trait_defaults():
     assert w.position == "sidebar"
 
 
+def test_multiselect_passes_disabled_and_hidden_to_widget(monkeypatch):
+    monkeypatch.setattr(m, "display", lambda *_: None)
+    WidgetsManager.clear()
+
+    widget = MultiSelect(
+        label="Choose fruits",
+        choices=["apple", "banana", "cherry"],
+        value=["banana"],
+        disabled=True,
+        hidden=True,
+    )
+
+    assert widget.disabled is True
+    assert widget.hidden is True
+
+
 def test_multiselectwidget_invalid_position_raises_traiterror():
     w = MultiSelectWidget()
     with pytest.raises(TraitError):
         w.position = "top"  # invalid
+
+
+def test_multiselect_widget_caret_click_toggles_open_dropdown():
+    esm = MultiSelectWidget._esm
+    css = MultiSelectWidget._css
+
+    assert "if (event.target === caret && isOpen)" in esm
+    assert "closeDropdown();" in esm
+    assert "input.blur();" in esm
+    assert "pointer-events: auto;" in css
 
 
 # --- _repr_mimebundle_ / MERCURY_MIMETYPE integration -----------------------------

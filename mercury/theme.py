@@ -1,11 +1,6 @@
-import toml
-from pathlib import Path
+from .config import load_theme_config
 
 def load_theme(config_path="config.toml"):
-    config_file = Path(config_path)
-    if not config_file.exists():
-        return {}
-    config = toml.load(config_file)
-    return config.get("theme", {})
+    return load_theme_config(config_path)
 
 THEME = load_theme()

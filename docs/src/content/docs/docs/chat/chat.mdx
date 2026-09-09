@@ -20,7 +20,7 @@ and scrolling behavior**.
 You can try the `Chat` widget directly in this interactive example:
 
 <MercuryDemo
-  iframeSrc="https://docs.ismvp.org/mercury/chat?no-navbar"
+  iframeSrc="https://docs.ismvp.org/mercury/echo-chat?no-navbar"
   notebookUrl="https://github.com/mljar/mercury/blob/main/docs/notebooks/chat.ipynb"
 /> 
 
@@ -63,6 +63,9 @@ Whenever a new message is added:
 
 * the chat scrolls to the **most recent message**
 * scrolling waits briefly to allow large outputs (plots, images) to finish rendering
+* a fixed-height chat stops following new content when the reader scrolls upward
+
+Auto-follow resumes when the reader returns near the bottom of the fixed-height chat.
 
 This makes `Chat` suitable for:
 
@@ -91,7 +94,7 @@ with left:
     chat = mr.Chat(height="600px")
 
 with right:
-    mr.Markdown("Controls or analysis output")
+    _ = mr.Markdown("Controls or analysis output")
 ```
 
 The value accepts CSS height strings, for example `"600px"`, `"70vh"`, or
@@ -207,7 +210,9 @@ Default: `""`
 
 If empty, Chat keeps its natural content height and the surrounding app/page
 container scrolls. If provided, Chat uses that fixed height and enables internal
-vertical scrolling.
+vertical scrolling. A fixed-height chat always owns its scrollbar, even before its
+content is tall enough to overflow, so multiple chats cannot compete for the page
+scroll position.
 
 Examples:
 

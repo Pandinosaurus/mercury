@@ -39,25 +39,29 @@ def CheckBox(
     """
     value = resolve_boolean_value(value=bool(value), url_key=url_key)
 
-    args = [label, bool(value), url_key, appearance, position]
+    args = [label, bool(value), url_key, appearance, position, disabled, hidden]
     kwargs = {
         "label": label,
         "value": bool(value),
         "url_key": url_key,
         "appearance": appearance,
-        "position": position
+        "position": position,
+        "disabled": disabled,
+        "hidden": hidden,
     }
 
     code_uid = WidgetsManager.get_code_uid("Checkbox", key=key, args=args, kwargs=kwargs)
     cached = WidgetsManager.get_widget(code_uid)
     
     if cached:
+        WidgetsManager.register_input(code_uid, cached, key=key, url_key=url_key)
         apply_widget_render_metadata(cached)
         display(cached)
         return cached
 
     instance = CheckboxWidget(**with_widget_render_metadata(kwargs))
     WidgetsManager.add_widget(code_uid, instance)
+    WidgetsManager.register_input(code_uid, instance, key=key, url_key=url_key)
     display(instance)
     return instance
 
@@ -185,7 +189,7 @@ class CheckboxWidget(anywidget.AnyWidget):
     }}
 
     .mljar-checkbox-input:focus-visible + .mljar-checkbox-control {{
-        box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.35);
+        box-shadow: inset 0 0 0 2px {THEME.get('focus_border_color', THEME.get('accent_color', '#4c7cf0'))};
     }}
 
     .mljar-checkbox-label {{
@@ -251,7 +255,8 @@ class CheckboxWidget(anywidget.AnyWidget):
     }}
 
     .mljar-checkbox-container:not(.is-disabled):hover .mljar-checkbox-control {{
-        filter: brightness(0.98);
+        border-color: {THEME.get('focus_border_color', THEME.get('accent_color', '#4c7cf0'))};
+        background: {THEME.get('hover_background_color', THEME.get('panel_bg_hover', '#e5e7eb'))};
     }}
     """
 

@@ -10,11 +10,25 @@ Please use `--log-level=INFO` or `--log-level=DEBUG`. The default log level is `
 
 ## Session sharing
 
-We have option to share the same session between multiple users.  
-What does it mean? You can deploy app, and when you click on it, others will see this.  
-To enable session sharing please use `--keep-session`. 
+Use `--keep-session` to give all viewers of an app one shared Python session.
+Widget changes and resulting outputs are synchronized across connected browsers.
+Mercury runs one notebook rerun at a time; changes received while it is busy are
+coalesced into the next rerun, starting at the earliest affected cell.
+
+Without this option, each viewer gets independent widget values and kernel state.
 
 ## Timeout
 
 Would you like to limit your server resources with usage timeout?  
 Please set `--timeout=600`. The timeout value is in seconds.
+
+## Working directory
+
+By default, Mercury uses the current directory as the base for notebooks and related files.
+To override it, use `--working-dir=/path/to/notebooks`.
+
+When provided, Mercury will use that directory as the base for:
+- notebook discovery,
+- relative notebook paths passed on startup,
+- `config.toml` lookup,
+- relative file reads from inside notebooks.
